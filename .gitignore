@@ -1,0 +1,10 @@
+.build/
+out/
+local.env
+garden.svg.make
+garden_parts.h
+garden_card.s
+garden_pictures.s
+garden_table.s
+__pycache__/
+.DS_Store

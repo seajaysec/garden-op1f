@@ -1,0 +1,42 @@
+{
+  "about": "Garden: a chord player in the sequencer list.",
+  "name": "garden",
+  "version": 1,
+  "interface": 1,
+  "build": "garden",
+  "sources": [
+    "../garden/garden.s",
+    "../garden/articulate.cpp",
+    "../garden/garden.cpp",
+    "../garden/garden_table.s",
+    "../garden/garden_card.s",
+    "../garden/garden_pictures.s"
+  ],
+  "works_with": [],
+  "serves": [],
+  "exports": [],
+  "pictures": [
+    {
+      "name": "garden.svg",
+      "file": "../garden/garden.svg.make"
+    }
+  ],
+  "card": {
+    "level": 3,
+    "frame": "garden_frame",
+    "pick": null,
+    "pictures": true,
+    "input": "garden_input",
+    "folders": [
+      {
+        "name": "garden",
+        "place": "garden",
+        "shown": false
+      }
+    ]
+  },
+  "marks": [],
+  "named": true,
+  "sum": true,
+  "path": null
+}
