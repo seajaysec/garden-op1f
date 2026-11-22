@@ -32,7 +32,7 @@
 
   const hash = new URLSearchParams(location.hash.slice(1));
   const synth = new GardenSynth();
-  let synthSaved = hash.get('s') || store.get('synth');
+  let synthSaved = hash.get('s') || store.get('synth2');
   if (synthSaved) { try { synth.load(JSON.parse(atob(synthSaved))); } catch (e) {} }
   let bpm = +(hash.get('bpm') || store.get('bpm') || 120);
   let view = hash.get('v') || store.get('view') || 'garden';
@@ -128,11 +128,10 @@
     worker.onmessage = pump;
   } catch (e) { setInterval(pump, 8); }
 
-  const shiftBy = {kbd: false, panel: false, latch: false, field: false};
-  const shift = () => shiftBy.kbd || shiftBy.panel || shiftBy.latch || shiftBy.field;
+  const shiftBy = {kbd: false, panel: false, field: false};
+  const shift = () => shiftBy.kbd || shiftBy.panel || shiftBy.field;
   function shiftShown() {
     $('shift-badge').classList.toggle('on', shift());
-    $('shift-key').classList.toggle('latched', shiftBy.latch);
     $('shift-key').classList.toggle('down', shiftBy.panel);
     lanes();
   }
@@ -154,7 +153,7 @@
       const key = SYNTH_PAGES[synthPage].keys[k], d = SYNTH_PARAMS[key];
       synth.set(key, synth.p[key] + steps * (d.steps ? 1 : 2));
       if (key === 'mode') M._gw_mono(synth.mono() ? 1 : 0);
-      store.set('synth', btoa(JSON.stringify(synth.p)));
+      store.set('synth2', btoa(JSON.stringify(synth.p)));
       note('synth ' + key + ' ' + synth.p[key]);
     }
     spin(k, steps); lanes(); drawSynth();
@@ -242,13 +241,7 @@
   }
   document.querySelectorAll('[data-control^="t"]').forEach(el => { const i = +el.dataset.control.slice(1); hold(el, () => tKey(i, true), () => tKey(i, false)); });
   hold(document.querySelector('[data-control="help"]'), () => helpKey(true), () => helpKey(false));
-  let lastShiftTap = 0;
-  hold($('shift-key'), () => {
-    const now = performance.now();
-    if (shiftBy.latch) shiftBy.latch = false;
-    else if (now - lastShiftTap < 320) shiftBy.latch = true;
-    lastShiftTap = now; shiftBy.panel = true; shiftShown();
-  }, () => { shiftBy.panel = false; shiftShown(); });
+  hold($('shift-key'), () => { shiftBy.panel = true; shiftShown(); }, () => { shiftBy.panel = false; shiftShown(); });
 
   const numbers = $('numbers'), $$num = [];
   for (let i = 0; i < 8; ++i) {
