@@ -128,15 +128,22 @@
     worker.onmessage = pump;
   } catch (e) { setInterval(pump, 8); }
 
-  const shiftBy = {kbd: false, panel: false, field: false};
-  const shift = () => shiftBy.kbd || shiftBy.panel || shiftBy.field;
+  const shiftBy = {kbd: false, panel: false, field: false, armed: false};
+  const shift = () => shiftBy.kbd || shiftBy.panel || shiftBy.field || shiftBy.armed;
   function shiftShown() {
     $('shift-badge').classList.toggle('on', shift());
     $('shift-key').classList.toggle('down', shiftBy.panel);
+    $('shift-key').classList.toggle('latched', shiftBy.armed && !shiftBy.panel);
     lanes();
   }
-  let fieldHelpUsed = false;
-  function used() { if (shiftBy.field) fieldHelpUsed = true; }
+  let fieldHelpUsed = false, panelUsed = false, liftPending = false, liftTimer = 0, dragging = 0;
+  function used() {
+    if (shiftBy.field) fieldHelpUsed = true;
+    if (shiftBy.panel) panelUsed = true;
+    if (shiftBy.armed) liftPending = true;
+  }
+  function lift() { clearTimeout(liftTimer); if (liftPending) { liftPending = false; shiftBy.armed = false; shiftShown(); } }
+  function liftLater() { if (!dragging && liftPending) { clearTimeout(liftTimer); liftTimer = setTimeout(lift, 450); } }
 
   const log = [];
   function note(s) { log.push(s); if (log.length > 48) log.shift(); }
@@ -156,7 +163,7 @@
       store.set('synth2', btoa(JSON.stringify(synth.p)));
       note('synth ' + key + ' ' + synth.p[key]);
     }
-    spin(k, steps); lanes(); drawSynth();
+    spin(k, steps); lanes(); drawSynth(); liftLater();
   }
   function pressKnob(k) {
     used(); pressed[k] = 1; turned[k] = 0;
@@ -166,23 +173,27 @@
   function releaseKnob(k) {
     if (!pressed[k]) return;
     pressed[k] = 0; $$knob[k].classList.remove('down');
-    if (view !== 'garden') return;
-    input(W.UP, K.press + k);
-    if (!turned[k]) { input(down(), K.click + k); input(W.UP, K.click + k); note((shift() ? 'shift+' : '') + 'push ' + KNOBS[k]); }
+    if (view === 'garden') {
+      input(W.UP, K.press + k);
+      if (!turned[k]) { input(down(), K.click + k); input(W.UP, K.click + k); note((shift() ? 'shift+' : '') + 'push ' + KNOBS[k]); }
+    }
+    lift();
   }
   function tKey(i, isDown) {
     used();
     if (view === 'garden') { input(isDown ? down() : W.UP, K.t + i); if (isDown) note((shift() ? 'shift+' : '') + 'T' + (i + 1)); }
     else if (isDown) { synthPage = i === 0 ? 0 : i === 1 ? (shift() ? 2 : 1) : i + 1; lanes(); drawSynth(); }
+    if (!isDown) lift();
   }
   function numberKey(i, isDown) {
     used();
     $$num[i].classList.toggle('down', isDown);
-    if (view !== 'garden') return;
-    input(isDown ? down() : W.UP, K.numbers[i]);
-    if (isDown) note((shift() ? 'shift+' : '') + (i + 1));
+    if (view === 'garden') { input(isDown ? down() : W.UP, K.numbers[i]); if (isDown) note((shift() ? 'shift+' : '') + (i + 1)); }
+    if (!isDown) lift();
   }
   function helpKey(isDown) {
+    used();
+    if (!isDown) setTimeout(lift, 0);
     if (view !== 'garden') return;
     input(isDown ? down() : W.UP, K.help);
     if (isDown) note('help');
@@ -206,16 +217,17 @@
       const n = passed.get(id); passed.delete(id); synth.noteOff(n, synth.now());
       for (let j = roll.length - 1; j >= 0; --j) if (roll[j].src === 'i' && roll[j].note === n && !roll[j].t1) { roll[j].t1 = synth.now(); break; }
     }
-    lights();
+    lights(); lift();
   }
 
+  function capture(el, e) { try { el.setPointerCapture(e.pointerId); } catch (x) {} }
   const $$knob = [...document.querySelectorAll('[data-knob]')];
   const knobAngle = [0, 0, 0, 0];
   function spin(k, steps) { knobAngle[k] += steps * 12; $$knob[k].querySelector('.tick').style.transform = 'rotate(' + knobAngle[k] + 'deg)'; }
   $$knob.forEach((el, k) => {
     let y0 = 0, done = 0, id = null, moved = false;
     el.addEventListener('pointerdown', e => {
-      e.preventDefault(); el.setPointerCapture(e.pointerId); id = e.pointerId; y0 = e.clientY; done = 0; moved = false;
+      e.preventDefault(); capture(el, e); id = e.pointerId; y0 = e.clientY; done = 0; moved = false; ++dragging;
     });
     el.addEventListener('pointermove', e => {
       if (e.pointerId !== id) return;
@@ -223,10 +235,10 @@
       if (steps) { moved = true; done += steps; turnKnob(k, steps); }
     });
     const end = e => {
-      if (e.pointerId !== id) return; id = null;
-      if (!moved) { pressKnob(k); releaseKnob(k); }
+      if (e.pointerId !== id) return; id = null; --dragging;
+      if (!moved) { pressKnob(k); releaseKnob(k); } else lift();
     };
-    el.addEventListener('pointerup', end); el.addEventListener('pointercancel', e => { id = null; });
+    el.addEventListener('pointerup', end); el.addEventListener('pointercancel', e => { if (e.pointerId === id) { id = null; --dragging; lift(); } });
     el.addEventListener('wheel', e => { e.preventDefault(); turnKnob(k, e.deltaY < 0 ? 1 : -1); }, {passive: false});
     el.addEventListener('keydown', e => {
       if (e.key === 'ArrowUp' || e.key === 'ArrowRight') { e.preventDefault(); turnKnob(k, 1); }
@@ -235,20 +247,21 @@
     });
   });
   function hold(el, on, off) {
-    el.addEventListener('pointerdown', e => { e.preventDefault(); el.setPointerCapture(e.pointerId); el.classList.add('down'); on(); });
+    el.addEventListener('pointerdown', e => { e.preventDefault(); capture(el, e); el.classList.add('down'); on(); });
     const up = () => { if (!el.classList.contains('down')) return; el.classList.remove('down'); off(); };
     el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
   }
   document.querySelectorAll('[data-control^="t"]').forEach(el => { const i = +el.dataset.control.slice(1); hold(el, () => tKey(i, true), () => tKey(i, false)); });
   hold(document.querySelector('[data-control="help"]'), () => helpKey(true), () => helpKey(false));
-  hold($('shift-key'), () => { shiftBy.panel = true; shiftShown(); }, () => { shiftBy.panel = false; shiftShown(); });
+  hold($('shift-key'), () => { shiftBy.panel = true; panelUsed = false; shiftShown(); },
+    () => { shiftBy.panel = false; if (!panelUsed) { shiftBy.armed = !shiftBy.armed; liftPending = false; } shiftShown(); });
 
   const numbers = $('numbers'), $$num = [];
   for (let i = 0; i < 8; ++i) {
     const b = document.createElement('button');
     b.className = 'num'; b.innerHTML = '<b>' + (i + 1) + '</b><small></small>';
     numbers.appendChild(b); $$num.push(b);
-    b.addEventListener('pointerdown', e => { e.preventDefault(); b.setPointerCapture(e.pointerId); numberKey(i, true); });
+    b.addEventListener('pointerdown', e => { e.preventDefault(); capture(b, e); numberKey(i, true); });
     const up = () => { if (b.classList.contains('down')) numberKey(i, false); };
     b.addEventListener('pointerup', up); b.addEventListener('pointercancel', up);
   }
@@ -268,7 +281,7 @@
     const keyAt = (x, y) => { const el = document.elementFromPoint(x, y); return el && el.closest && el.closest('.piano > div'); };
     const press = (pid, el) => { const k = +el.dataset.k; fingers.set(pid, k); el.classList.add('down'); keyDown('p' + k, k, 53 + k + 12 * octave, 100, false); };
     const lift = pid => { const k = fingers.get(pid); if (k === undefined) return; fingers.delete(pid); if (![...fingers.values()].includes(k)) { $$key[k].classList.remove('down'); keyUp('p' + k); } };
-    piano.addEventListener('pointerdown', e => { e.preventDefault(); const el = keyAt(e.clientX, e.clientY); if (el) { piano.setPointerCapture(e.pointerId); press(e.pointerId, el); } });
+    piano.addEventListener('pointerdown', e => { e.preventDefault(); const el = keyAt(e.clientX, e.clientY); if (el) { capture(piano, e); press(e.pointerId, el); } });
     piano.addEventListener('pointermove', e => {
       if (!fingers.has(e.pointerId)) return;
       const el = keyAt(e.clientX, e.clientY);
