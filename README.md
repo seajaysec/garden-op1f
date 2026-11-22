@@ -8,6 +8,13 @@ A chord player for the OP-1 Field, as an [open-field](https://github.com/LaP0573
 Unofficial. Not made, endorsed or supported by Teenage Engineering, and not affiliated with them or with open-field.
 Use at your own risk; see [LICENSE](LICENSE).
 
+## Try it in a browser
+
+[Garden in the browser](https://seajaysec.github.io/garden-op1f/) runs the pack's own chord engine and screen with a
+simple synth. Play it on screen, with any MIDI keyboard, or with a Field in MIDI controller mode (knobs set to
+relative; hold Help for Shift, tap it for Help). On an iPhone or iPad, Share › Add to Home Screen. If the unit does
+something different from the web, **Report a difference** opens an issue with the exact state attached.
+
 ## Install
 
 Put `garden.pack` (in this repository, or from [releases](../../releases)) in the unit's `packs` folder next to open-field's `base.pack`, and
