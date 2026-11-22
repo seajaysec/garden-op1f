@@ -1,4 +1,4 @@
-const CACHE = 'garden-767c12a6fd41';
+const CACHE = 'garden-ced170474943';
 const FILES = ['./', 'index.html', 'style.css', 'app.js', 'synth.js', 'engine.js', 'screen.svg', 'build.json', 'manifest.webmanifest',
   'vendor/Tone.js', 'icons/icon.svg', 'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES.map(f => new Request(f, {cache: 'reload'})))).then(() => self.skipWaiting())); });

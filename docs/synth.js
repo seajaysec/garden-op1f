@@ -9,7 +9,7 @@ const SHAPE_NAMES = ['sine', 'triangle', 'square', 'saw'];
 
 const SYNTH_DEFAULTS = {
   wave: 2, detune: 0, cutoff: 62, resonance: 18,
-  attack: 0, decay: 30, sustain: 70, release: 14,
+  attack: 0, decay: 30, sustain: 70, release: 26,
   mode: 0, portamento: 0, spread: 30, envfilter: 45,
   dtime: 3, dfeedback: 35, dmix: 0, rmix: 0,
   lrate: 30, ldepth: 0, ltarget: 0, lshape: 0,
