@@ -27,7 +27,7 @@
     navigator.serviceWorker.register('sw.js').catch(() => {});
   }
 
-  const build = await fetch('build.json').then(r => r.json()).catch(() => ({garden: '?', pack: ''}));
+  const build = await fetch('build.json', {cache: 'no-cache'}).then(r => r.json()).catch(() => ({garden: '?', pack: ''}));
   $('version').textContent = 'Garden ' + build.garden + (build.pack ? ' · pack ' + build.pack.slice(0, 8) : '');
 
   const hash = new URLSearchParams(location.hash.slice(1));
@@ -49,7 +49,7 @@
   M._gw_mono(synth.mono() ? 1 : 0);
   M._gw_show(view === 'garden' ? 1 : 0);
 
-  const svgText = await fetch('screen.svg').then(r => r.text());
+  const svgText = await fetch('screen.svg', {cache: 'no-cache'}).then(r => r.text());
   $('screen').innerHTML = svgText;
   const svg = $('screen').querySelector('svg');
   const PARTS = M._gw_part_count(), TEXTS = M._gw_text_count();
