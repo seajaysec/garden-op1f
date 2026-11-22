@@ -1,101 +1,16 @@
-#include "build_m3_card.h"
+#include "build_r6e_card.h"
 #include "articulate.h"
 #include "garden_parts.h"
-
 typedef unsigned int u32;
-
-
-typedef u32 word_t;
-
-typedef void (*NoteOnFn)(int note, int velocity, int flags, int phase, int drum_pitch, int port, int quiet);
-typedef void (*NoteOffFn)(int note, int velocity, int flags, int phase, int a, int b);
-typedef void (*ObjFn)(void* self);
-typedef void (*TickFlagsFn)(void* self, int counter);
-typedef void* (*PlayerNowFn)();
-typedef void** (*PlayerSlotFn)();
-typedef int (*TypeNowFn)();
-typedef int (*CatalogLoadFn)(const char* path, void* out);
-typedef int (*FileWriteFn)(void* path, const void* json);
-
-#define CALL_NOTE_ON ((NoteOnFn)0x8f008388u)
-#define CALL_NOTE_OFF ((NoteOffFn)0x8f008518u)
-#define CALL_PLAYER_NOW ((PlayerNowFn)0x8fc978fcu)
-#define CALL_PLAYER_SLOT ((PlayerSlotFn)0x8fc97844u)
-#define CALL_TYPE_NOW ((TypeNowFn)0x8fc97818u)
-#define CALL_TICK_FLAGS ((TickFlagsFn)0x8fc9db24u)
-#define CALL_PLAYER_MAKE ((ObjFn)0x8fc9dc8au)
-#define CALL_PLAYER_STOP ((ObjFn)0x8fc9e12cu)
-#define CALL_PLAYER_RESET ((ObjFn)0x8fc9dc7cu)
-#define PLAYER_BASE_TABLE ((const u32*)0x8490c8c8u)
-#define CALL_CONTROLLER_MAKE ((ObjFn)0x8c0d2decu)
-#define CONTROLLER_BASE_TABLE ((const u32*)0x84013280u)
-#define CALL_CATALOG_LOAD ((CatalogLoadFn)0x8c0534d0u)
-#define CALL_FILE_WRITE ((FileWriteFn)0x8c053168u)
-typedef void* (*LabelFromNodeFn)(void* screen, void* node, int align);
-typedef void (*LabelTextFn)(void* label, const char* text, int width);
-typedef u32 (*PaintFn)(void* node);
-#define CALL_TEXT_OF_NODE ((LabelFromNodeFn)0x8fc25abcu)
-#define CALL_TEXT_SET ((LabelTextFn)0x8fc3aa3cu)
-enum { NODE_PAINT = 5, DOCUMENT_PAINTS = 0x84 / 4, DOCUMENT_PAINTS_END = 0x88 / 4, PAINT_BYTES = 20 };
-
-typedef int (*MatchFn)(void* self, unsigned id);
-typedef void** (*ScreensFn)();
-typedef void (*DrawFn)(void* screen);
-#define CALL_SEQ_OFF_CHECK ((MatchFn)0x8fc681a0u)
-#define CALL_SCREENS ((ScreensFn)0x8fc261fcu)
-#define CALL_DRAW ((DrawFn)0x8fc25778u)
-#define CURRENT_MODE (*(volatile u32*)0x8400f978u)
-#define CURRENT_SCREEN (*(volatile u32*)0x848d2540u)
-#define BANK (*(volatile int*)0x84d21088u)
-#define TYPES ((volatile int*)0x84d1ccccu)
-#define SYNTH_PLAYER (*(void* volatile*)0x84d1ccc4u)
-#define SYNTH_SCHEDULED (*(volatile unsigned char*)0x84d1ccc9u)
-#define SYNTH_ENABLED (*(volatile unsigned char*)0x08018d35u)
 #define SYNTH_SLOT (*(volatile u32*)0x11904704u)
-#define SYNTH_OCTAVES ((volatile int*)0x0802be08u)
 #define SYNTH_ENVELOPES 0x08024ce8u
-
-struct Json { u32 value; unsigned char type, allocated, pad[2]; void* comments; };
-enum { J_NULL, J_INT, J_UINT, J_REAL, J_STRING, J_BOOL, J_ARRAY, J_OBJECT };
-typedef void (*JInitFn)(Json*, unsigned);
-typedef void (*JDestroyFn)(Json*);
-typedef Json* (*JMemberFn)(Json*, const char*);
-typedef Json* (*JIndexFn)(Json*, unsigned);
-typedef unsigned (*JSizeFn)(const Json*);
-typedef Json* (*JAssignFn)(Json*, const Json*);
-typedef const Json* (*JGetFn)(const Json*, const char*);
-typedef const Json* (*JGetIndexFn)(const Json*, unsigned);
-#define J_INIT ((JInitFn)0x8c085ba8u)
-#define J_DESTROY ((JDestroyFn)0x8c0844e0u)
-#define J_MEMBER ((JMemberFn)0x8c085e84u)
-#define J_INDEX ((JIndexFn)0x8c085c54u)
-#define J_SIZE ((JSizeFn)0x8c084c22u)
-#define J_ASSIGN ((JAssignFn)0x8c0845b8u)
-#define J_GET ((JGetFn)0x8c084f74u)
-#define J_GET_INDEX ((JGetIndexFn)0x8c084ee0u)
-static_assert(sizeof(Json) == 12, "Json is 12 bytes");
-
-enum { GARDEN_TYPE = 7, GARDEN_ROW = 8, SEQ_MODE = 7, PLAYER_WORDS = 11, CONTROLLER_WORDS = 11,
-       PLAYER_BYTES = 0x1000, CONTROLLER_BYTES = 0x88, TICKS_PER_BAR = 384 };
-
-enum : u32 { PLAYER_BASE_SUM = 0x04a5a717u, CONTROLLER_BASE_SUM = 0x06fda356u };
-
-
-extern "C" const char garden_type_name[] OP1F_NAMED("garden_type_name");
-extern "C" const char garden_type_name[] = "garden";
+enum { TICKS_PER_BAR = 384 };
+static inline u32 mask_off() { return op1f_mask(); }
+static inline void mask_on(u32 prior) { op1f_unmask(prior); }
 extern "C" const Op1fCard op1f_card_garden OP1F_NAMED("op1f_card_garden");
-
-static inline u32 mask_off() {
-    u32 prior;
-    asm volatile("cli %0;" : "=d"(prior) : : "memory");
-    return prior;
-}
-static inline void mask_on(u32 prior) { asm volatile("sti %0;" : : "d"(prior) : "memory"); }
-
 static int clampi(int v, int lo, int hi) { return v < lo ? lo : v > hi ? hi : v; }
 static int mod12(int v) { while (v >= 12) v -= 12; while (v < 0) v += 12; return v; }
 static int fold(int n) { while (n < 0) n += 12; while (n > 127) n -= 12; return n; }
-
 static u32 udiv(u32 n, u32 d) {
     if (d == 0) return 0;
     u32 q = 0, r = 0;
@@ -120,10 +35,8 @@ static u32 isqrt(u32 x) {
     }
     return r;
 }
-
 enum { STYLE_CHORD = 0, STYLE_STRUM, STYLE_STRUM2, STYLE_SLOP, STYLE_ARP, STYLE_FARP, STYLE_PATTERN, STYLE_HARP };
 enum { NONE = 255, PULSE_RATES = 10, ECHO_RATES = 9, WALK_LENS = 4, WALK_ORDERS = 4, MOMENTARY_MS = 300 };
-
 struct Settings {
     u32 magic, version;
     signed char cascade, boost;
@@ -138,7 +51,6 @@ struct Settings {
 enum { SAVE_MAGIC = 0x4e445247 , SAVE_VERSION = 6 };
 static Settings g;
 static volatile u32 edits;
-
 static void defaults() {
     unsigned char* b = (unsigned char*)&g;
     for (u32 i = 0; i < sizeof g; ++i) b[i] = 0;
@@ -159,7 +71,6 @@ static void defaults() {
         for (int j = 0; j < 4; ++j) g.seed_ext[i][j] = NONE;
     }
 }
-
 static int settings_valid(const Settings* s) {
     if (s->magic != (u32)SAVE_MAGIC || s->version != (u32)SAVE_VERSION) return 0;
     if (s->cascade < -16 || s->cascade > 16 || s->boost < -2 || s->boost > 2 || s->style > 7 || s->rate > 11 ||
@@ -177,7 +88,6 @@ static int settings_valid(const Settings* s) {
     }
     return 1;
 }
-
 static u32 seed_mask(int i) {
     u32 m = 0;
     for (int j = 0; j < 4; ++j) if (g.seed_ext[i][j] < 12) m |= 1u << g.seed_ext[i][j];
@@ -189,18 +99,14 @@ static u32 tones_of(u32 q, u32 mask) {
     for (u32 e = 0; e < 12; ++e) if (((mask >> e) & 1u) && !art_pollen_silent(q, e)) ++n;
     return n > 8 ? 8 : n;
 }
-
 enum { SRC_NONE, SRC_KEY, SRC_PAD, SRC_HELD, MAX_SCHED = 128, OUT_MAX = 160 };
-
 enum { SYNTH_VOICES = 6, ECHO_GROUPS = 16, ECHO_REPEATS = 4 };
 struct Sched { unsigned char note, vel, on, pad_; u32 due; };
-
 static struct {
     unsigned char note[OUT_MAX], vel[OUT_MAX], on[OUT_MAX];
     u32 n;
 } outbox;
-
-
+static volatile u32 ons_sent, offs_sent, notes_refused;
 static void flush() {
     unsigned char note[OUT_MAX], vel[OUT_MAX], on[OUT_MAX];
     u32 m = mask_off();
@@ -209,11 +115,10 @@ static void flush() {
     outbox.n = 0;
     mask_on(m);
     for (u32 i = 0; i < n; ++i) {
-        if (on[i]) { CALL_NOTE_ON(note[i], vel[i], 1, 0, 0, 0, 0); }
-        else { CALL_NOTE_OFF(note[i], 64, 1, 0, 0, 0); }
+        if (on[i]) { if (op1f_note_on(&op1f_card_garden, note[i], vel[i], 0)) ons_sent = ons_sent + 1; else notes_refused = notes_refused + 1; }
+        else if (op1f_note_off(&op1f_card_garden, note[i], 0)) offs_sent = offs_sent + 1; else notes_refused = notes_refused + 1;
     }
 }
-
 static struct {
     uint32_t rng;
     u32 now;
@@ -235,13 +140,11 @@ static struct {
     u32 walk_at, walk_span;
     int planter;
 } st;
-
 static volatile struct {
     unsigned char note[ART_CHORD_MAX], n, playing, root, kind, boost_note, boosting, planter, walking, stepping, echoing;
     unsigned short mask;
     u32 pos, beat16, walk_q10;
 } view;
-
 static void emit(int note, int vel, int on) {
     if (outbox.n >= (u32)OUT_MAX) return;
     outbox.note[outbox.n] = (unsigned char)note;
@@ -249,7 +152,6 @@ static void emit(int note, int vel, int on) {
     outbox.on[outbox.n] = (unsigned char)on;
     ++outbox.n;
 }
-
 static void note_on(int note, int vel) {
     if (note < 0 || note > 127) return;
     vel = clampi(vel, 1, 127);
@@ -259,39 +161,32 @@ static void note_on(int note, int vel) {
     st.struck_at[note] = st.now;
     emit(note, vel, 1);
 }
-
 static void note_off(int note) {
     if (note < 0 || note > 127 || st.count[note] == 0) return;
     if (--st.count[note] == 0) emit(note, 64, 0);
 }
-
 static int pitches_sounding() {
     int n = 0;
     for (int i = 0; i < 128; ++i) n += st.count[i] != 0;
     return n;
 }
-
 static void let_go_now() {
     st.nsched = 0;
     for (int n = 0; n < 128; ++n)
         while (st.count[n]) note_off(n);
 }
-
 static u32 ticks_of(u32 units) {
     if (!units) return 0;
     u32 t = (art_q16(units, 15583u) + 32768u) >> 16;
     return t ? t : 1u;
 }
-
 static int play_mode_mono() {
     u32 slot = SYNTH_SLOT;
     if (slot >= 8u) return 0;
     u32 word = *(volatile u32*)(SYNTH_ENVELOPES + 32u * slot + 16u);
     return (word >> 28) != 0u;
 }
-
 static int boost_pitch() { return fold(st.root + 12 * g.boost); }
-
 static void request_of(art_req* r, int velocity) {
     r->notes = st.voiced;
     r->n = st.nvoiced;
@@ -309,7 +204,6 @@ static void request_of(art_req* r, int velocity) {
     r->bar = ART_BEAT * 4u;
     r->velocity = velocity;
 }
-
 static void build_chord() {
     uint8_t base[ART_CHORD_MAX];
     u32 n = art_base(st.root, (u32)st.kind, st.mask, base);
@@ -338,7 +232,6 @@ static void build_chord() {
     for (u32 i = 0; i < st.nvoiced; ++i) st.prev[i] = st.voiced[i];
     st.nprev = st.nvoiced;
 }
-
 static void schedule(int note, int vel, u32 due, int on) {
     if (st.nsched == MAX_SCHED) return;
     Sched* s = &st.sched[st.nsched++];
@@ -348,12 +241,11 @@ static void schedule(int note, int vel, u32 due, int on) {
     s->pad_ = 0;
     s->due = due;
 }
-
 static const unsigned char ECHO_TICKS[ECHO_RATES] = { 0, 16, 24, 32, 48, 72, 96, 144, 192 };
 static const unsigned char ECHO_FADE[ECHO_REPEATS] = { 181, 128, 91, 64 };
 struct Echo { unsigned char n, left, note[ART_CHORD_MAX], vel[ART_CHORD_MAX]; u32 born, next, step; };
 static Echo echoes[ECHO_GROUPS];
-
+static volatile u32 echo_taps, echo_skipped;
 static void echo_seed(int note, int vel) {
     u32 step = g.echo < ECHO_RATES ? ECHO_TICKS[g.echo] : 0u;
     if (!step) return;
@@ -382,14 +274,11 @@ static void echo_seed(int note, int vel) {
     e->vel[e->n] = (unsigned char)vel;
     ++e->n;
 }
-
 static int echo_active() {
     for (int i = 0; i < ECHO_GROUPS; ++i) if (echoes[i].left) return 1;
     return 0;
 }
-
 static void echo_clear() { for (int i = 0; i < ECHO_GROUPS; ++i) echoes[i].left = 0; }
-
 static void echo_poll() {
     for (int i = 0; i < ECHO_GROUPS; ++i) {
         Echo* e = &echoes[i];
@@ -400,18 +289,19 @@ static void echo_poll() {
         for (u32 k = 0; k < e->n; ++k) {
             int p = e->note[k];
             if (st.count[p] || st.now - st.struck_at[p] < (e->step >> 1) || pitches_sounding() >= SYNTH_VOICES) {
+                echo_skipped = echo_skipped + 1;
                 continue;
             }
             int v = (int)((e->vel[k] * fade) >> 8);
             if (v < 1) v = 1;
             note_on(p, v);
             schedule(p, v, st.now + gate, 0);
+            echo_taps = echo_taps + 1;
         }
         e->next += e->step;
         --e->left;
     }
 }
-
 static void strike() {
     art_req r;
     request_of(&r, st.vel * 258);
@@ -431,10 +321,8 @@ static void strike() {
         }
     }
 }
-
 static const unsigned char PULSE_DIV[PULSE_RATES] = { 0, 1, 2, 4, 5, 6, 7, 8, 9, 10 };
 static u32 pulse_step() { return g.pulse && g.pulse < PULSE_RATES ? ticks_of(art_div(PULSE_DIV[g.pulse])) : 0u; }
-
 static void begin_gesture(int src) {
     let_go_now();
     st.mono = play_mode_mono();
@@ -451,7 +339,6 @@ static void begin_gesture(int src) {
     st.pulse_next = ps ? st.now + ps : 0;
     st.pulse_note = g.boost ? boost_pitch() : st.root;
 }
-
 static void release_gesture() {
     let_go_now();
     st.on = 0;
@@ -462,12 +349,10 @@ static void release_gesture() {
     st.period = 0;
     st.pulse_next = 0;
 }
-
 static u32 swing_of(u32 pos) {
     if (!(pos & 1u) || g.swing <= 50) return 0;
     return (st.period * (u32)(g.swing - 50) * 41u) >> 12;
 }
-
 static void drain() {
     for (int i = 0; i < st.nsched;) {
         Sched s = st.sched[i];
@@ -477,7 +362,6 @@ static void drain() {
         else note_off(s.note);
     }
 }
-
 static void advance() {
     drain();
     echo_poll();
@@ -503,7 +387,6 @@ static void advance() {
         } else st.pulse_next = 0;
     }
 }
-
 static void play_planter(int k, int src) {
     if (!planted(k)) return;
     st.root = clampi(g.pad_root[k], 0, 127);
@@ -516,10 +399,8 @@ static void play_planter(int k, int src) {
     begin_gesture(src);
     st.planter = k;
 }
-
 static const unsigned char WALK_HALVES[WALK_LENS] = { 1, 2, 4, 8 };
 static u32 walk_span() { return (u32)(TICKS_PER_BAR / 2) * WALK_HALVES[g.walk_len < WALK_LENS ? g.walk_len : 1]; }
-
 static int walk_next() {
     int list[8];
     int n = 0, at = 8;
@@ -537,14 +418,12 @@ static int walk_next() {
     }
     return list[at + 1 < n ? at + 1 : 0];
 }
-
 static void walk_play(int k) {
     play_planter(k, SRC_PAD);
     st.walk_pad = k;
     st.walk_at = st.now;
     st.walk_span = walk_span();
 }
-
 static void walk_toggle(int from) {
     if (st.walk) { st.walk = 0; release_gesture(); return; }
     for (int k = 0; k < 8; ++k) {
@@ -552,14 +431,12 @@ static void walk_toggle(int from) {
         if (planted(i)) { st.walk = 1; st.walk_dir = 0; walk_play(i); return; }
     }
 }
-
 static void walk_poll() {
     if (!st.walk || (u32)(st.now - st.walk_at) < st.walk_span) return;
     int next = walk_next();
     if (next < 0) { st.walk = 0; return; }
     walk_play(next);
 }
-
 static void publish_view() {
     u32 n = st.on ? st.nvoiced : 0u;
     for (u32 i = 0; i < n; ++i) view.note[i] = st.voiced[i];
@@ -578,103 +455,60 @@ static void publish_view() {
     view.beat16 = st.on ? (((st.now - st.anchor) / 24u) & 15u) : 16u;
     view.walk_q10 = st.walk && st.walk_span ? udiv((st.now - st.walk_at) << 10, st.walk_span) : 0u;
 }
-
 static volatile u32 revoice_req, revoice_done;
 static volatile int pad_down_req, pad_up_req, walk_req, hold_req;
-
+static volatile u32 chords, revoices, pads, turns, keys_taken;
+static volatile u32 key_calls, release_calls, release_matched, stops, ticks_seen, idle_stops;
 static void revoice() {
     if (!st.on) return;
     st.kind = g.quality;
     st.mask = g.extensions;
     begin_gesture(st.src);
 }
-
-static union { void* align; unsigned char bytes[PLAYER_BYTES]; } player[2];
-static word_t player_table[2][PLAYER_WORDS];
-static volatile unsigned char player_made[2];
-
-static int bank_of(const void* self) {
-    if (self == player[0].bytes && player_made[0]) return 0;
-    if (self == player[1].bytes && player_made[1]) return 1;
-    return -1;
-}
-
-static u32 crc_words(const volatile u32* w, int n) {
-    u32 c = 0xffffffffu;
-    for (int i = 0; i < n; ++i) {
-        u32 v = w[i];
-        for (int b = 0; b < 4; ++b) {
-            c ^= (v >> (8 * b)) & 0xffu;
-            for (int k = 0; k < 8; ++k) c = (c >> 1) ^ (0xedb88320u & (0u - (c & 1u)));
-        }
-    }
-    return ~c;
-}
-
-static int tables_ok = -1;
-static int tables_match() {
-    if (tables_ok < 0)
-        tables_ok = crc_words((const volatile u32*)PLAYER_BASE_TABLE, PLAYER_WORDS) == (u32)PLAYER_BASE_SUM &&
-                    crc_words((const volatile u32*)CONTROLLER_BASE_TABLE, CONTROLLER_WORDS) == (u32)CONTROLLER_BASE_SUM;
-    return tables_ok;
-}
-
-static int synth_live() {
-    return player_made[0] && TYPES[0] == GARDEN_TYPE && SYNTH_PLAYER == player[0].bytes && SYNTH_SCHEDULED && SYNTH_ENABLED;
-}
-
+enum { ASK = 0, KEY_ID_MIDI = 1000, KEY_ID_KEYS = 100 };
+static volatile u32 seq_on;
+static volatile u32 page_how;
+static int synth_live() { return seq_on != 0; }
 static void engine_start() {
     if (!st.rng) { st.rng = 0x2545f491u; st.planter = 8; st.lead_root = -1; st.cascade_was = 0x7fffffff; }
 }
-
-static int player_key(void* self, int key, int shift, int physical, int velocity) {
-    if (shift || bank_of(self) != 0) return 0;
-    if (physical && (key < 0 || key > 23)) return 0;
-    int note = key;
-    if (physical) {
-        u32 slot = SYNTH_SLOT;
-        int octave = slot < 8u ? SYNTH_OCTAVES[slot] : 0;
-        if (octave < -10 || octave > 10) octave = 0;
-        note = key + 53 + 12 * octave;
-    }
-    if (note < 0 || note > 127) return 0;
-    int id = physical ? key + 1 : -(key + 1000);
+static int key_id(const Op1fKey* e) { return (e->from == (u32)OP1F_FROM_MIDI ? KEY_ID_MIDI : KEY_ID_KEYS) + e->key + 128; }
+static int key_down(const Op1fKey* e) {
+    if (e->shift || e->note > 127u) return 0;
+    key_calls = key_calls + 1;
     u32 m = mask_off();
     int used = 0;
-    if (BANK == 0 && synth_live() && st.src != SRC_KEY) {
+    if (synth_live() && st.src != SRC_KEY) {
         engine_start();
         st.walk = 0;
-        st.key_id = id;
-        st.root = note;
-        st.vel = clampi(velocity, 1, 127);
+        st.key_id = key_id(e);
+        st.root = (int)e->note;
+        st.vel = clampi((int)e->velocity, 1, 127);
         st.kind = g.quality;
         st.mask = g.extensions;
         st.planter = 8;
-        g.root = (unsigned char)note;
+        g.root = (unsigned char)e->note;
         begin_gesture(SRC_KEY);
         publish_view();
         used = 1;
+        ++chords;
     }
     mask_on(m);
     flush();
     return used;
 }
-
-static int player_release(void* self, int key, int physical) {
-    if (bank_of(self) != 0) return 0;
-    int id = physical ? key + 1 : -(key + 1000);
+static void key_up(const Op1fKey* e) {
+    release_calls = release_calls + 1;
     u32 m = mask_off();
-    int mine = st.src == SRC_KEY && st.key_id == id;
-    if (mine) {
+    if (st.src == SRC_KEY && st.key_id == key_id(e)) {
+        release_matched = release_matched + 1;
         if (g.hold) { st.latched = 1; st.key_id = 0; st.src = SRC_HELD; }
         else release_gesture();
         publish_view();
     }
     mask_on(m);
     flush();
-    return mine;
 }
-
 static void engine_stop() {
     u32 m = mask_off();
     release_gesture();
@@ -684,26 +518,25 @@ static void engine_stop() {
     mask_on(m);
     flush();
 }
-
-static void player_reset(void* self) {
-    int b = bank_of(self);
-    if (b < 0) return;
-    CALL_PLAYER_RESET(self);
-    if (b == 0) engine_stop();
+extern "C" int garden_key(const Op1fKey* e) OP1F_NAMED("garden_key");
+extern "C" int garden_key(const Op1fKey* e) {
+    if (e->bytes < 32u || e->host != 0u) return 0;
+    if (e->what == (u32)OP1F_UP) { key_up(e); return 1; }
+    if (e->what != (u32)OP1F_DOWN) return 0;
+    return key_down(e);
 }
-
-static void player_stop(void* self) {
-    int b = bank_of(self);
-    if (b < 0) return;
-    CALL_PLAYER_STOP(self);
-    if (b == 0) engine_stop();
+extern "C" void garden_run(unsigned host, unsigned how) OP1F_NAMED("garden_run");
+extern "C" void garden_run(unsigned host, unsigned how) {
+    if (host != 0u) return;
+    if (how == (u32)OP1F_RUN_ON) { seq_on = 1; engine_start(); return; }
+    seq_on = 0;
+    stops = stops + 1;
+    engine_stop();
 }
-
-static void player_tick(void* self, int counter) {
-    int b = bank_of(self);
-    if (b < 0) return;
-    CALL_TICK_FLAGS(self, counter);
-    if (b != 0) return;
+extern "C" void garden_tick(const Op1fTick* now) OP1F_NAMED("garden_tick");
+extern "C" void garden_tick(const Op1fTick* now) {
+    if (now->bytes < 32u || now->host != 0u) return;
+    ticks_seen = ticks_seen + 1;
     u32 m = mask_off();
     engine_start();
     ++st.now;
@@ -711,9 +544,10 @@ static void player_tick(void* self, int counter) {
         release_gesture();
         echo_clear();
         st.walk = 0;
+        idle_stops = idle_stops + 1;
     }
     u32 want = revoice_req;
-    if (want != revoice_done) { revoice_done = want; revoice(); }
+    if (want != revoice_done) { revoice_done = want; revoice(); ++revoices; }
     int down = pad_down_req, up = pad_up_req, walk = walk_req, hold = hold_req;
     pad_down_req = 0;
     pad_up_req = 0;
@@ -722,7 +556,7 @@ static void player_tick(void* self, int counter) {
     if (down && synth_live()) {
         int k = down - 1;
         if (st.walk) { st.walk_pad = k; st.walk_at = st.now; }
-        if (planted(k)) { play_planter(k, SRC_PAD); }
+        if (planted(k)) { play_planter(k, SRC_PAD); ++pads; }
     }
     if (up && st.src == SRC_PAD && !g.hold && !st.walk && st.planter == up - 1) release_gesture();
     if (walk && synth_live()) walk_toggle(walk - 1);
@@ -733,188 +567,14 @@ static void player_tick(void* self, int counter) {
     mask_on(m);
     flush();
 }
-
-static int player_status(void* self) { return bank_of(self) == 0 && st.on; }
-static int player_follows_octave(void* self) { (void)self; return 0; }
-static int player_any_note(void* self) { return bank_of(self) == 0; }
-
-static int player_ready(int b) {
-    if (player_made[b]) return 1;
-    if (!tables_match()) return 0;
-    for (int i = 0; i < PLAYER_WORDS; ++i) player_table[b][i] = PLAYER_BASE_TABLE[i];
-    player_table[b][2] = (word_t)&player_key;
-    player_table[b][3] = (word_t)&player_release;
-    player_table[b][4] = (word_t)&player_reset;
-    player_table[b][5] = (word_t)&player_tick;
-    player_table[b][7] = (word_t)&player_stop;
-    player_table[b][8] = (word_t)&player_status;
-    player_table[b][9] = (word_t)&player_follows_octave;
-    player_table[b][10] = (word_t)&player_any_note;
-    CALL_PLAYER_MAKE(player[b].bytes);
-    *(word_t**)player[b].bytes = player_table[b];
-    player_made[b] = 1;
-    return 1;
-}
-
-extern "C" int garden_factory(int type) OP1F_NAMED("garden_factory");
-extern "C" int garden_factory(int type) {
-    int b = BANK;
-    if (type != GARDEN_TYPE || b < 0 || b > 1 || !player_ready(b)) return 0;
-    void* now = CALL_PLAYER_NOW();
-    if (now) ((ObjFn)(*(word_t**)now)[7])(now);
-    *CALL_PLAYER_SLOT() = player[b].bytes;
-    TYPES[b] = GARDEN_TYPE;
-    return 1;
-}
-
-extern "C" int garden_type_of_name(const u32* s) OP1F_NAMED("garden_type_of_name");
-extern "C" int garden_type_of_name(const u32* s) {
-    if (s == 0 || s[5] != 6u) return 0;
-    const char* d = s[6] < 16u ? (const char*)(s + 1) : (const char*)s[1];
-    if (d == 0) return 0;
-    for (int i = 0; i < 6; ++i) if (d[i] != garden_type_name[i]) return 0;
-    return tables_match() ? GARDEN_TYPE : 0;
-}
-
-
-static union { void* align; unsigned char bytes[CONTROLLER_BYTES]; } controller;
-static word_t controller_table[CONTROLLER_WORDS];
-static volatile unsigned char controller_made;
+extern "C" void garden_shown(unsigned where, unsigned how) OP1F_NAMED("garden_shown");
+extern "C" void garden_shown(unsigned where, unsigned how) { if (where == 0u) page_how = how; }
 static void* volatile document;
 static volatile u32 page_shown, page_ready;
-
-static int home() { return CURRENT_MODE == (u32)SEQ_MODE && BANK == 0 && TYPES[0] == GARDEN_TYPE; }
-
-static void ask_page() {
-    if (document && page_ready && home() && !page_shown)
-        op1f_page_open(&op1f_card_garden, document);
-}
-
-static int controller_key(void* self, const u32* event) { (void)self; (void)event; return 0; }
-static int controller_shift(void* self, const u32* event) { (void)self; (void)event; return 0; }
-static int controller_release(void* self, int code) { (void)self; (void)code; return 0; }
-static void controller_turn(void* self, int knob, int delta) { (void)self; (void)knob; (void)delta; }
-static void controller_enter(void* self, int reason) { (void)self; (void)reason; }
-static void controller_leave(void* self, int reason) { (void)self; (void)reason; op1f_page_close(&op1f_card_garden); }
-static int controller_screen(void* self) {
-    (void)self;
-    ask_page();
-    return (int)CURRENT_SCREEN;
-}
-
-extern "C" void* garden_controller_for_type() OP1F_NAMED("garden_controller_for_type");
-extern "C" void* garden_controller_for_type() {
-    if (CALL_TYPE_NOW() != GARDEN_TYPE) return 0;
-    if (!controller_made) {
-        u32 m = mask_off();
-        if (!controller_made && tables_match()) {
-            for (int i = 0; i < CONTROLLER_WORDS; ++i) controller_table[i] = CONTROLLER_BASE_TABLE[i];
-            controller_table[3] = (word_t)&controller_key;
-            controller_table[4] = (word_t)&controller_shift;
-            controller_table[5] = (word_t)&controller_release;
-            controller_table[6] = (word_t)&controller_turn;
-            controller_table[7] = (word_t)&controller_enter;
-            controller_table[8] = (word_t)&controller_leave;
-            controller_table[9] = (word_t)&controller_screen;
-            CALL_CONTROLLER_MAKE(controller.bytes);
-            *(word_t**)controller.bytes = controller_table;
-            controller_made = 1;
-        }
-        mask_on(m);
-    }
-    return controller_made ? (void*)controller.bytes : 0;
-}
-
-
-
-static int text_is(const Json* v, const char* s) {
-    if (v == 0 || v->type != J_STRING || v->value == 0) return 0;
-    const char* t = (const char*)v->value;
-    while (*t && *t == *s) { ++t; ++s; }
-    return *t == *s;
-}
-static int is_garden_row(const Json* row) {
-    return row && row->type == J_OBJECT && text_is(J_GET(row, "type"), garden_type_name);
-}
-
-static void catalog_add(Json* root) {
-    if (!tables_match()) { return; }
-    if (root == 0 || root->type != J_OBJECT) { return; }
-    const Json* rows = J_GET(root, "seq_types");
-    if (rows == 0 || rows->type != J_ARRAY) { return; }
-    u32 n = J_SIZE(rows);
-    if (n >= 256u) { return; }
-    for (u32 i = 0; i < n; ++i) {
-        const Json* row = J_GET_INDEX(rows, i);
-        if (row == 0 || row->type != J_OBJECT) { return; }
-        const Json* id = J_GET(row, "id");
-        int numbered = id && (id->type == J_UINT || id->type == J_INT) && id->value == (u32)GARDEN_ROW;
-        if (is_garden_row(row)) { return; }
-        if (numbered) { return; }
-    }
-    Json item, v;
-    J_INIT(&item, J_OBJECT);
-    J_INIT(&v, J_STRING);
-    v.value = (u32)garden_type_name;
-    J_ASSIGN(J_MEMBER(&item, "type"), &v);
-    J_DESTROY(&v);
-    J_INIT(&v, J_BOOL);
-    v.value = 1;
-    J_ASSIGN(J_MEMBER(&item, "synth_only"), &v);
-    J_DESTROY(&v);
-    J_INIT(&v, J_INT);
-    v.value = GARDEN_ROW;
-    J_ASSIGN(J_MEMBER(&item, "id"), &v);
-    J_DESTROY(&v);
-    J_ASSIGN(J_INDEX(J_MEMBER(root, "seq_types"), n), &item);
-    J_DESTROY(&item);
-}
-
-extern "C" void __attribute__((weak)) op1f_engines_factory_note_load(Json* root) OP1F_NAMED("op1f_engines_factory_note_load");
-extern "C" int __attribute__((weak)) op1f_engines_factory_note_save(void* path, const Json* root) OP1F_NAMED("op1f_engines_factory_note_save");
-
-static int write_catalog(void* path, const Json* json) {
-    if (&op1f_engines_factory_note_save) return op1f_engines_factory_note_save(path, json);
-    return CALL_FILE_WRITE(path, json);
-}
-
-extern "C" int garden_catalog_load(const char* path, Json* out) OP1F_NAMED("garden_catalog_load");
-extern "C" int garden_catalog_load(const char* path, Json* out) {
-    int r = CALL_CATALOG_LOAD(path, out);
-    catalog_add(out);
-    if (&op1f_engines_factory_note_load) op1f_engines_factory_note_load(out);
-    return r;
-}
-
-extern "C" int garden_catalog_save(void* path, const Json* root) OP1F_NAMED("garden_catalog_save");
-extern "C" int garden_catalog_save(void* path, const Json* root) {
-    const Json* rows = root && root->type == J_OBJECT ? J_GET(root, "seq_types") : 0;
-    int ours = 0;
-    u32 n = rows && rows->type == J_ARRAY ? J_SIZE(rows) : 0u;
-    for (u32 i = 0; i < n; ++i) if (is_garden_row(J_GET_INDEX(rows, i))) ours = 1;
-    if (!ours) return write_catalog(path, root);
-    Json copy, kept;
-    J_INIT(&copy, J_NULL);
-    J_ASSIGN(&copy, root);
-    J_INIT(&kept, J_ARRAY);
-    u32 k = 0;
-    for (u32 i = 0; i < n; ++i) {
-        const Json* row = J_GET_INDEX(rows, i);
-        if (!is_garden_row(row)) J_ASSIGN(J_INDEX(&kept, k++), row);
-    }
-    J_ASSIGN(J_MEMBER(&copy, "seq_types"), &kept);
-    J_DESTROY(&kept);
-    int r = write_catalog(path, &copy);
-    J_DESTROY(&copy);
-    return r;
-}
-
-
 enum { PAGE_PLAY = 0, PAGE_RHYTHM, PAGE_PALETTE, PAGE_GARDENS, PAGE_HELP };
 enum { KEY_HELP = 0, KEY_T1 = 6, KEY_T4 = 9, KEY_CLICK_FIRST = 54, KEY_CLICK_LAST = 57, KEY_PRESS_FIRST = 61, KEY_PRESS_LAST = 64,
-       INPUT_L2 = 36, FRAME_L3 = 36 };
+       INPUT_L2 = 36, FRAME_L3 = 36, PERIOD_FRAMES = 256 };
 static const unsigned char NUMBER_KEY[8] = { 45, 46, 47, 16, 17, 18, 19, 20 };
-
 static volatile int page;
 static volatile int help_open;
 static volatile u32 help_down_ms;
@@ -925,17 +585,14 @@ static int cursor[4];
 static int remainder_q10[4];
 static struct { u32 since; unsigned char prev, ext, owned, pad_; } modkey[8];
 static volatile unsigned char key_did[8];
-
 static int number_of(u32 key) {
     for (int i = 0; i < 8; ++i) if (NUMBER_KEY[i] == key) return i;
     return -1;
 }
-
 static void changed(int voice) {
     edits = edits + 1;
     if (voice) revoice_req = revoice_req + 1;
 }
-
 static void modifier(int k, int down) {
     u32 now = op1f_ms();
     u32 m = mask_off();
@@ -962,7 +619,6 @@ static void modifier(int k, int down) {
     mask_on(m);
     changed(1);
 }
-
 static void swap_chords() {
     int slot = -1;
     for (int i = 0; i < 4; ++i) if (g.kinds[g.fl][i] == g.quality) slot = i;
@@ -970,7 +626,6 @@ static void swap_chords() {
     if (slot >= 0) g.quality = g.kinds[g.fl][slot];
     for (int i = 0; i < 4; ++i) modkey[i].owned = 0;
 }
-
 static void swap_exts() {
     u32 next = 0;
     for (u32 e = 0; e < 12; ++e)
@@ -983,7 +638,6 @@ static void swap_exts() {
     g.extensions = (unsigned short)next;
     for (int i = 4; i < 8; ++i) modkey[i].owned = 0;
 }
-
 static u32 palette_next(int ext, u32 current) {
     u32 used = 0;
     for (int r = 0; r < 2; ++r)
@@ -995,7 +649,6 @@ static u32 palette_next(int ext, u32 current) {
     }
     return current;
 }
-
 static void palette_rotate(int q, int slot) {
     int ext = q >= 2, row = q & 1;
     unsigned char* cell = ext ? &g.extsets[row][slot] : &g.kinds[row][slot];
@@ -1005,7 +658,6 @@ static void palette_rotate(int q, int slot) {
     if (ext && row == g.pf && ((g.extensions >> old) & 1u))
         g.extensions = (unsigned short)((g.extensions & ~(1u << old)) | (1u << next));
 }
-
 static void palette_reset(int ext) {
     unsigned char (*sets)[4] = ext ? g.extsets : g.kinds;
     int row = ext ? g.pf : g.fl, other = row ^ 1, slot = -1;
@@ -1026,7 +678,6 @@ static void palette_reset(int ext) {
     if (!ext && slot >= 0) g.quality = sets[row][slot];
     for (int i = 0; i < 4; ++i) if ((on >> i) & 1u) g.extensions |= (unsigned short)(1u << sets[row][i]);
 }
-
 static u32 choice_step(int ext, u32 current, int d) {
     unsigned char list[13];
     u32 n = 0, seen = 0;
@@ -1044,7 +695,6 @@ static u32 choice_step(int ext, u32 current, int d) {
     while (k >= (int)n) k -= (int)n;
     return list[k];
 }
-
 static void plant_now(int i) {
     g.seed_q[i] = g.quality;
     int k = 0;
@@ -1053,7 +703,6 @@ static void plant_now(int i) {
     g.pad_root[i] = g.root;
     g.pad_used[i] = 1;
 }
-
 static void turn_play(int knob, int steps, int shift) {
     int style = g.style, arp = style == STYLE_ARP || style == STYLE_FARP;
     if (knob == 0) {
@@ -1078,14 +727,12 @@ static void turn_play(int knob, int steps, int shift) {
         else g.boost = (signed char)clampi(g.boost + steps, -2, 2);
     }
 }
-
 static void turn_rhythm(int knob, int steps) {
     if (knob == 0) g.loop = (unsigned char)clampi(g.loop + steps, 0, 1);
     else if (knob == 1) g.length = (unsigned char)clampi(g.length + 5 * steps, 1, 100);
     else if (knob == 2) g.swing = (unsigned char)clampi(g.swing + steps, 50, 75);
     else g.human = (unsigned char)clampi(g.human + 5 * steps, 0, 100);
 }
-
 static void turn_gardens(int knob, int steps, int shift) {
     int pad = g.pad_sel;
     if (shift) {
@@ -1107,11 +754,11 @@ static void turn_gardens(int knob, int steps, int shift) {
         g.seed_ext[pad][sq] = (unsigned char)choice_step(1, g.seed_ext[pad][sq], steps);
     }
 }
-
 static void turn(int knob, int q10, int shift) {
     int sum = clampi(q10, -1048576, 1048576) + remainder_q10[knob], steps = sum / 1024;
     remainder_q10[knob] = sum - steps * 1024;
     if (!steps) return;
+    turns = turns + 1;
     int pg = page;
     if (pg == PAGE_PLAY) { turned_knob = knob; turned_ms = op1f_ms(); }
     u32 m = mask_off();
@@ -1122,15 +769,14 @@ static void turn(int knob, int q10, int shift) {
     mask_on(m);
     changed(pg == PAGE_PLAY || pg == PAGE_RHYTHM);
 }
-
 static void push(int knob, int shift) {
     int pg = page, voice = 0, edit = 1;
     u32 m = mask_off();
     if (pg == PAGE_PLAY) {
         if (shift) edit = 0;
         else if (knob == 0) { g.lead ^= 1u; voice = 1; }
-        else if (knob == 1) { g.hold ^= 1u; if (!g.hold) hold_req = 1; }
-        else if (knob == 2) { swap_chords(); voice = 1; }
+        else if (knob == 1) { swap_chords(); voice = 1; }
+        else if (knob == 2) { g.hold ^= 1u; if (!g.hold) hold_req = 1; }
         else { swap_exts(); voice = 1; }
     } else if (pg == PAGE_PALETTE) {
         if (shift) {
@@ -1149,7 +795,6 @@ static void push(int knob, int shift) {
     mask_on(m);
     if (edit) changed(voice);
 }
-
 extern "C" int garden_input(const Op1fInput* e) OP1F_NAMED("garden_input");
 extern "C" int garden_input(const Op1fInput* e) {
     if (e->bytes < (u32)INPUT_L2) return 0;
@@ -1194,6 +839,7 @@ extern "C" int garden_input(const Op1fInput* e) {
     }
     int k = number_of(key);
     if (k >= 0) {
+        keys_taken = keys_taken + 1;
         if (page == PAGE_GARDENS) {
             if (shifted) {
                 u32 m = mask_off();
@@ -1217,14 +863,13 @@ extern "C" int garden_input(const Op1fInput* e) {
     }
     return 0;
 }
-
 enum { Q = 1024 };
 static void* part[PART_COUNT];
 static unsigned char want[PART_COUNT], have[PART_COUNT];
+static u32 parts_found;
 static u32 thin_used[sizeof THIN_N], thick_used[sizeof THICK_N];
-
+static unsigned char thin_dropped, thick_dropped;
 static void use(int i) { want[i] = 1; }
-
 static void pose(int i, int a, int b, int c, int d, int x, int y) {
     want[i] = 1;
     if (part[i]) {
@@ -1232,9 +877,7 @@ static void pose(int i, int a, int b, int c, int d, int x, int y) {
         op1f_move(part[i], m);
     }
 }
-
 static void place(int i, int x, int y, int scale) { pose(i, scale, 0, 0, scale, x * Q, y * Q); }
-
 static void segment(int i, int x1, int y1, int x2, int y2) {
     int dx = x2 - x1, dy = y2 - y1;
     int sx = dx >> 6, sy = dy >> 6;
@@ -1242,16 +885,14 @@ static void segment(int i, int x1, int y1, int x2, int y2) {
     if (len == 0) return;
     pose(i, dx, dy, -sdiv(dy * 16, len), sdiv(dx * 16, len), x1, y1);
 }
-
 static void thin(int pool, int x1, int y1, int x2, int y2) {
-    if (thin_used[pool] >= THIN_N[pool]) return;
+    if (thin_used[pool] >= THIN_N[pool]) { thin_dropped = 1; return; }
     segment(THIN_AT[pool] + (int)thin_used[pool]++, x1, y1, x2, y2);
 }
 static void thick(int pool, int x1, int y1, int x2, int y2) {
-    if (thick_used[pool] >= THICK_N[pool]) return;
+    if (thick_used[pool] >= THICK_N[pool]) { thick_dropped = 1; return; }
     segment(THICK_AT[pool] + (int)thick_used[pool]++, x1, y1, x2, y2);
 }
-
 static void commit() {
     for (int i = 0; i < PART_COUNT; ++i) {
         if (part[i]) op1f_show(part[i], want[i]);
@@ -1261,34 +902,24 @@ static void commit() {
     for (u32 i = 0; i < sizeof THIN_N; ++i) thin_used[i] = 0;
     for (u32 i = 0; i < sizeof THICK_N; ++i) thick_used[i] = 0;
 }
-
 static void* font[TEXT_COUNT];
 static char font_text[TEXT_COUNT][24];
-
+static char font_name[TEXT_COUNT][5];
+static unsigned char font_made[TEXT_COUNT];
+static volatile u32 texts_set, texts_refused;
 static void make_fonts() {
-    char name[6];
     for (int t = 0; t < TEXT_COUNT; ++t) {
         int v = t, at = 1;
-        name[0] = 't';
-        if (v >= 10) { int tens = 0; while (v >= 10) { v -= 10; ++tens; } name[at++] = (char)('0' + tens); }
-        name[at++] = (char)('0' + v);
-        name[at] = 0;
-        void* node = op1f_node(document, name);
-        if (!node) continue;
-        u32 paint = ((PaintFn)((*(word_t**)node)[NODE_PAINT]))(node);
-        const u32* doc = (const u32*)document;
-        u32 paints = doc[DOCUMENT_PAINTS_END] - doc[DOCUMENT_PAINTS];
-        if (paint == 0 || (paint - 1u) * (u32)PAINT_BYTES >= paints) continue;
-        u32 held[4] = { 0, (u32)(word_t)document, 0, 0 };
-        font[t] = CALL_TEXT_OF_NODE(held, node, TEXT_ALIGN[t]);
-        if (!font[t]) continue;
-        CALL_TEXT_SET(font[t], "", 480);
+        font_name[t][0] = 't';
+        if (v >= 10) { int tens = 0; while (v >= 10) { v -= 10; ++tens; } font_name[t][at++] = (char)('0' + tens); }
+        font_name[t][at++] = (char)('0' + v);
+        font_name[t][at] = 0;
         font_text[t][0] = 0;
+        font_made[t] = 1;
     }
 }
-
 static void say(int t, int x, int y, const char* s) {
-    if (t < 0 || t >= TEXT_COUNT || !font[t]) return;
+    if (t < 0 || t >= TEXT_COUNT || !font_made[t] || !document) return;
     char small[24];
     int n = 0;
     for (; n < 23 && s[n]; ++n) {
@@ -1297,23 +928,24 @@ static void say(int t, int x, int y, const char* s) {
         small[n] = c >= 'A' && c <= 'Z' ? (char)(c - 'A' + 'a') : (char)c;
     }
     small[n] = 0;
-    int same = 1;
-    for (int i = 0; i <= n; ++i) if (font_text[t][i] != small[i]) { same = 0; break; }
+    int same = font[t] != 0;
+    for (int i = 0; same && i <= n; ++i) if (font_text[t][i] != small[i]) same = 0;
     if (!same) {
-        CALL_TEXT_SET(font[t], small, 480);
+        if (!op1f_text_set(document, font_name[t], small, 480, TEXT_ALIGN[t])) {
+            texts_refused = texts_refused + 1;
+            font_made[t] = 0;
+            return;
+        }
         for (int i = 0; i <= n; ++i) font_text[t][i] = small[i];
+        if (!font[t]) font[t] = op1f_text_node(document, font_name[t]);
+        texts_set = texts_set + 1;
     }
-    if (n) {
-        int m[9];
-        const int* now = (const int*)((const unsigned char*)font[t] + 4);
-        for (int i = 0; i < 9; ++i) m[i] = now[i];
-        m[6] = x * Q;
-        m[7] = y * Q;
+    if (n && font[t]) {
+        int m[9] = { Q, 0, 0, 0, Q, 0, x * Q, y * Q, Q };
         op1f_move(font[t], m);
     }
 }
 static void hush(int t) { say(t, 0, 0, ""); }
-
 struct Line {
     char s[40];
     int n;
@@ -1332,10 +964,8 @@ struct Line {
         }
     }
 };
-
 static const char* const NOTE_NAME[12] = { "c", "c#", "d", "d#", "e", "f", "f#", "g", "g#", "a", "a#", "b" };
 static const char* const STYLE_NAME[8] = { "chord", "strum", "strum 2", "slop", "arp", "farp", "pattern", "harp" };
-
 static const char RATE_NAME[12][6] = { "2/1", "1/1", "1/2", "1/2t", "1/4", "1/4t", "1/8", "1/8t", "1/16", "1/16t", "1/32", "1/32t" };
 static const char* const ORDER_NAME[6] = { "up", "down", "updown", "downup", "inside", "random" };
 static const char* const VTYPE_NAME[6] = { "close", "drop2", "drop3", "open", "shell", "spread" };
@@ -1344,7 +974,6 @@ static const char* const PULSE_NAME[PULSE_RATES] = { "no pulse", "p 1/1", "p 1/2
 static const char* const BOOST_NAME[5] = { "boost-2", "boost-1", "boost 0", "boost+1", "boost+2" };
 static const char* const WALK_LEN_NAME[WALK_LENS] = { "half bar", "1 bar", "2 bars", "4 bars" };
 static const char* const WALK_ORDER_NAME[WALK_ORDERS] = { "1 to 8", "8 to 1", "bounce", "random" };
-
 static const short SIN[256] = {
     0, 402, 804, 1205, 1606, 2006, 2404, 2801, 3196, 3590, 3981, 4370, 4756, 5139, 5520, 5897, 6270, 6639, 7005, 7366,
     7723, 8076, 8423, 8765, 9102, 9434, 9760, 10080, 10394, 10702, 11003, 11297, 11585, 11866, 12140, 12406, 12665,
@@ -1362,14 +991,11 @@ static const short SIN[256] = {
     -14635, -14449, -14256, -14053, -13842, -13623, -13395, -13160, -12916, -12665, -12406, -12140, -11866, -11585,
     -11297, -11003, -10702, -10394, -10080, -9760, -9434, -9102, -8765, -8423, -8076, -7723, -7366, -7005, -6639, -6270,
     -5897, -5520, -5139, -4756, -4370, -3981, -3590, -3196, -2801, -2404, -2006, -1606, -1205, -804, -402 };
-
 static inline __attribute__((always_inline)) int wobble(u32 ms, u32 period, u32 per_q16, int phase, int amp) {
     u32 angle = ((ms % period) * per_q16) >> 16;
     return (amp * SIN[(int)(angle + (u32)phase) & 255]) >> 14;
 }
-
 struct Voiced { unsigned char n, note[9], role[9]; };
-
 static int role_of(int root, int quality, u32 mask, int note) {
     int pc = mod12(note - root);
     if (!pc) return 0;
@@ -1377,10 +1003,8 @@ static int role_of(int root, int quality, u32 mask, int note) {
     for (u32 e = 0; e < 12; ++e) if (((mask >> e) & 1u) && mod12(art_pollen_interval[e]) == pc) return 2 + (int)e;
     return 1;
 }
-
 static int sounding(int n) { return n >= 0 && n < 128 && st.count[n] != 0; }
 static int any_sounding() { for (int n = 0; n < 128; ++n) if (st.count[n]) return 1; return 0; }
-
 static void voice_of(Voiced* out) {
     out->n = 0;
     int root = g.root, q = g.quality;
@@ -1414,7 +1038,6 @@ static void voice_of(Voiced* out) {
         }
     }
 }
-
 static int thin_role(int role, int quality, int lit) {
     if (lit) return THIN_WHITE;
     if (role == 0) return THIN_OCHRE;
@@ -1426,7 +1049,6 @@ static int thick_role(int role, int quality) {
     if (role == 15) return THICK_ORANGE;
     return THICK_HUE0 + (role == 1 ? quality : (role - 2));
 }
-
 static u32 icon_used[12], icon_on_used;
 static void icon_on(int x, int y, int scale) {
     if (icon_on_used < 9u) place(ICONON_AT + (int)icon_on_used++, x, y, scale);
@@ -1435,7 +1057,6 @@ static void icon(int kind, int x, int y, int scale) {
     if (kind < 0 || kind > 11 || icon_used[kind] >= (u32)ICON_COPIES) return;
     place(ICON_AT + kind * ICON_COPIES + (int)icon_used[kind]++, x, y, scale);
 }
-
 static void beat_dots() {
     u32 b = view.beat16;
     for (int k = 0; k < 4; ++k) {
@@ -1443,7 +1064,6 @@ static void beat_dots() {
         use(DOT_AT + k * 3 + (on ? (b < 4u ? 2 : 1) : 0));
     }
 }
-
 static void status_row(u32 ms, int shift) {
     int style = g.style, arp = style == STYLE_ARP || style == STYLE_FARP;
     Line l[4];
@@ -1456,7 +1076,6 @@ static void status_row(u32 ms, int shift) {
     else l[2].put(VTYPE_NAME[g.vtype]);
     l[3].put(shift ? PULSE_NAME[g.pulse] : BOOST_NAME[g.boost + 2]);
     for (int i = 0; i < 4; ++i) say(TX_ST0 + i, 60 + 120 * i, 26, l[i].s);
-
     int fk = turned_knob;
     if (fk >= 0 && fk < 4 && ms - turned_ms < 1000u) {
         int c = 60 + 120 * fk, half = (13 * l[fk].n) / 2;
@@ -1471,15 +1090,12 @@ static void status_row(u32 ms, int shift) {
         }
     }
 }
-
 static const short HOVER[4][2] = { { 150, 58 }, { 162, 100 }, { 330, 58 }, { 318, 100 } };
-
 static u32 hit_ms[128];
 static unsigned char was_on[16];
 static unsigned char slide_note[9], slide_n;
 static short slide_x[9], slide_from[9];
 static u32 slide_t0;
-
 static void track_hits(u32 ms) {
     for (int n = 0; n < 128; ++n) {
         int on = sounding(n), was = (was_on[n >> 3] >> (n & 7)) & 1;
@@ -1488,13 +1104,11 @@ static void track_hits(u32 ms) {
         else was_on[n >> 3] = (unsigned char)(was_on[n >> 3] & ~(1u << (n & 7)));
     }
 }
-
 static int flash_of(u32 ms, int n) {
     if (n < 0 || n > 127 || !hit_ms[n] || !sounding(n)) return 0;
     u32 age = ms - hit_ms[n];
     return age >= 240u ? 0 : (int)(256u - ((age * 1093u) >> 10));
 }
-
 static int voicing_mul(int vtype, int j, int n) {
     switch (vtype) {
     case 1: return j == (n >= 2 ? n - 2 : 2 * n - 2) ? 132 : 100;
@@ -1505,7 +1119,6 @@ static int voicing_mul(int vtype, int j, int n) {
     default: return 100;
     }
 }
-
 static void roots(u32 ms, const Voiced* vc) {
     if (!vc->n) { slide_n = 0; return; }
     int lo = vc->note[0], hi = vc->note[vc->n - 1], span = hi - lo < 24 ? 24 : hi - lo, xs[9], prev = -1000;
@@ -1517,7 +1130,6 @@ static void roots(u32 ms, const Voiced* vc) {
     }
     int over = xs[vc->n - 1] - 452;
     if (over > 0) for (u32 i = 0; i < vc->n; ++i) xs[i] -= over;
-
     int changed = vc->n != slide_n;
     for (u32 i = 0; i < vc->n && !changed; ++i) if (vc->note[i] != slide_note[i]) changed = 1;
     if (changed) {
@@ -1564,7 +1176,6 @@ static void roots(u32 ms, const Voiced* vc) {
         say(TX_NOTE0 + (int)i, px, 158, NOTE_NAME[mod12(vc->note[i])]);
     }
 }
-
 static void ripples(u32 ms, int moving) {
     if (!g.echo || g.echo >= ECHO_RATES) return;
     int spacing = 7 + 2 * g.echo, ph = moving ? (int)udiv(umod(ms, 833u) * (u32)spacing, 833u) : 0;
@@ -1576,7 +1187,6 @@ static void ripples(u32 ms, int moving) {
         thin(THIN_ORANGE, (240 + w) * Q, 117 * Q, (240 + w + 4) * Q, 120 * Q);
     }
 }
-
 static void play_page(u32 ms, int shift) {
     use(PAGE1);
     status_row(ms, shift);
@@ -1585,14 +1195,12 @@ static void play_page(u32 ms, int shift) {
     Voiced vc;
     voice_of(&vc);
     int moving = any_sounding();
-
     int fv = clampi(g.cascade + 8, 0, 16), sy = 108 - fv * 62 / 16;
     place(SUN, 446, sy, Q);
     place(RAYS_AT + fv, 446, sy, Q);
     if (fv > 8 || g.lead) place(SUNFILL, 446, sy, Q);
     if (g.lead) place(LEAD_AT + fv, 446, sy, Q);
     if (fv < 7) use(HORIZON);
-
     int per = GROUND_PERIOD[g.style & 7];
     if (per) {
         u32 t = umod(ms, 100u * (u32)per);
@@ -1608,10 +1216,8 @@ static void play_page(u32 ms, int shift) {
     int bob = moving ? (g.pulse ? wobble(ms, 260u, 64527u, 0, 3) : wobble(ms, 750u, 22370u, 0, 2)) : 0;
     place(MOLE_AT + clampi(g.boost + 2, 0, 4), 62, 122 + bob, Q);
     ripples(ms, moving);
-
     roots(ms, &vc);
     for (u32 i = vc.n; i < 9; ++i) hush(TX_NOTE0 + (int)i);
-
     for (int i = 0; i < 8; ++i) {
         int x = 30 + 60 * i, held = (int)((keys_down >> (u32)i) & 1u), blink = held && ((ms / 150u) & 1u);
         if (i < 4) {
@@ -1631,7 +1237,6 @@ static void play_page(u32 ms, int shift) {
         }
         if (held) use((blink ? HELDW_AT : HELD_AT) + i);
     }
-
     int rank = 0;
     for (u32 e = 0; e < 12; ++e) {
         if ((g.extensions >> e) & 1u) {
@@ -1643,7 +1248,6 @@ static void play_page(u32 ms, int shift) {
             for (int i = 0; i < 4; ++i) if (g.extsets[g.pf][i] == e) place(CRITTER_AT + (int)e, 30 + 60 * (4 + i), 179, Q);
         }
     }
-
     int kind = g.quality, n = PETALS[kind];
     const char* name = NOTE_NAME[mod12(view.playing ? view.root : g.root)];
     int wide = name[1] != 0, sway = moving ? wobble(ms, 3700u, 4534u, 0, 2) : 0;
@@ -1671,7 +1275,6 @@ static void play_page(u32 ms, int shift) {
     }
     say(TX_ROOT, 240 + sway, 85, name);
 }
-
 static void rhythm_page() {
     use(PAGE2);
     beat_dots();
@@ -1736,7 +1339,6 @@ static void rhythm_page() {
     say(TX_T2L3, 392, 146, "human");
     l.clear(); l.num(g.human); l.put("%"); say(TX_T2V3, 392, 166, l.s);
 }
-
 static void palette_page() {
     use(PAGE3);
     for (int q = 0; q < 4; ++q) {
@@ -1760,7 +1362,6 @@ static void palette_page() {
     for (int r = 0; r < 2; ++r)
         for (int i = 0; i < 4; ++i) place(CRITTER_AT + g.extsets[r][i], 268 + 56 * i, r ? 148 : 50, Q);
 }
-
 static void gardens_page(u32 ms, int shift) {
     use(PAGE4);
     int walking = view.walking;
@@ -1817,7 +1418,6 @@ static void gardens_page(u32 ms, int shift) {
         }
     }
 }
-
 static void help_page(int shift) {
     use(HELP);
     static const char* const PAGE_NAME[4] = { "play", "rhythm", "palette", "gardens" };
@@ -1834,7 +1434,7 @@ static void help_page(int shift) {
         turn[1] = shift ? "rate" : "style";
         turn[2] = style == STYLE_PATTERN && !shift ? "phrase" : style != STYLE_PATTERN && (arp ^ shift) ? "arp order" : "voicing";
         turn[3] = shift ? "boost pulse" : "boost";
-        if (!shift) { push[0] = "push: voice leading"; push[1] = "push: hold"; push[2] = "push: chord banks"; push[3] = "push: extension banks"; }
+        if (!shift) { push[0] = "push: voice leading"; push[1] = "push: chord banks"; push[2] = "push: hold"; push[3] = "push: extension banks"; }
     } else if (pg == PAGE_RHYTHM) {
         turn[0] = "loop"; turn[1] = "length"; turn[2] = "swing"; turn[3] = "human";
     } else if (pg == PAGE_PALETTE) {
@@ -1855,15 +1455,12 @@ static void help_page(int shift) {
     say(TX_HK0, 8, 194, pg == PAGE_GARDENS ? "1-8 play the gardens" : "1-4 kind, 5-8 extension");
     say(TX_HK1, 8, 212, pg == PAGE_GARDENS ? "shift+1-8 plant there" : "tap keeps, hold returns");
 }
-
 static int texts_page = -1;
 static int page_of_text(int t) {
     return t <= TX_T1_LAST ? PAGE_PLAY : t <= TX_T2_LAST ? PAGE_RHYTHM : t <= TX_T3_LAST ? PAGE_PALETTE :
            t <= TX_T4_LAST ? PAGE_GARDENS : PAGE_HELP;
 }
-
 static int page_drawn_now() { return help_open ? PAGE_HELP : page; }
-
 static void dress(u32 ms, int shift) {
     for (int i = 0; i < 12; ++i) icon_used[i] = 0;
     icon_on_used = 0;
@@ -1879,11 +1476,9 @@ static void dress(u32 ms, int shift) {
     else gardens_page(ms, shift);
     commit();
 }
-
 enum { SAVE_FOLDER = 0, SAVE_QUIET_MS = 1500 };
 static const char SAVE_NAME[] = "garden.bin";
 static struct { u32 loaded, edits_seen, changed_ms, writes, failures; int read_result; } disk;
-
 static void load_settings() {
     Settings s;
     int got = op1f_read(&op1f_card_garden, SAVE_FOLDER, SAVE_NAME, &s, sizeof s);
@@ -1895,7 +1490,6 @@ static void load_settings() {
     for (u32 i = 0; i < sizeof g; ++i) dst[i] = src[i];
     mask_on(m);
 }
-
 static void keep_settings(const Op1fFrame* now) {
     if (!disk.loaded) { disk.loaded = 1; load_settings(); disk.edits_seen = edits; return; }
     if (edits != disk.edits_seen) { disk.edits_seen = edits; disk.changed_ms = now->ms ? now->ms : 1u; return; }
@@ -1910,25 +1504,6 @@ static void keep_settings(const Op1fFrame* now) {
     else ++disk.failures;
     disk.changed_ms = 0;
 }
-
-enum { PAGE_SCREEN = 77, SEQ_SCREEN_ID = 0x33, SHOWN_FLAG = 16 };
-static const unsigned char OVERLAYS[] = { 59, 61, 65, 66, 67, 69, 70, 71, 72 };
-
-static void overlays_on_top() {
-    void** screens = CALL_SCREENS();
-    if (!screens) return;
-    for (u32 i = 0; i < sizeof OVERLAYS; ++i) {
-        unsigned char* s = (unsigned char*)screens[OVERLAYS[i]];
-        if (s && s[SHOWN_FLAG]) { CALL_DRAW(s); }
-    }
-}
-
-extern "C" int garden_seq_popup_match(void* self, unsigned id) OP1F_NAMED("garden_seq_popup_match");
-extern "C" int garden_seq_popup_match(void* self, unsigned id) {
-    if (id == (u32)PAGE_SCREEN && page_shown && home()) { id = SEQ_SCREEN_ID; }
-    return CALL_SEQ_OFF_CHECK(self, id);
-}
-
 static void part_name(char* out, int i) {
     static const int tens[4] = { 1000, 100, 10, 1 };
     int at = 1, started = 0;
@@ -1940,12 +1515,11 @@ static void part_name(char* out, int i) {
     }
     out[at] = 0;
 }
-
 static struct {
-    u32 asked, shown, frames, opened, closed, step, finding, last_open_frame, sig;
-    int page_drawn, shift_drawn;
+    u32 asked, shown, frames, opened, closed, step, finding, stood, sig;
+    int page_drawn, shift_drawn, countdown;
+    u32 rate_ms, rate_ticks;
 } ui;
-
 static u32 state_sig() {
     u32 s = edits * 2654435761u;
     s ^= (u32)page_drawn_now() * 97u ^ keys_down * 31u ^ view.pos * 13u ^ view.beat16 * 7u ^ (u32)view.playing * 5u;
@@ -1954,7 +1528,6 @@ static u32 state_sig() {
         s = s * 33u + (u32)(st.count[n] | (st.count[n + 1] << 2) | (st.count[n + 2] << 4) | (st.count[n + 3] << 6));
     return s;
 }
-
 extern "C" void garden_frame(const Op1fFrame* now) OP1F_NAMED("garden_frame");
 extern "C" void garden_frame(const Op1fFrame* now) {
     if (now->bytes < 28u) return;
@@ -1970,12 +1543,12 @@ extern "C" void garden_frame(const Op1fFrame* now) {
         ui.page_drawn = -1;
     }
     if (now->bytes >= (u32)FRAME_L3) keep_settings(now);
-
     if (document && ui.finding < (u32)PART_COUNT) {
         char name[8];
         for (int k = 0; k < 64 && ui.finding < (u32)PART_COUNT; ++k, ++ui.finding) {
             part_name(name, (int)ui.finding);
             part[ui.finding] = op1f_node(document, name);
+            if (part[ui.finding]) ++parts_found;
         }
         if (ui.finding >= (u32)PART_COUNT) {
             make_fonts();
@@ -1991,11 +1564,7 @@ extern "C" void garden_frame(const Op1fFrame* now) {
     ui.shown = shown;
     page_shown = shown;
     if (shown) ++ui.frames;
-
-    if (!shown && page_ready && home() && now->frame - ui.last_open_frame > 30u) {
-        ui.last_open_frame = now->frame;
-        op1f_page_open(&op1f_card_garden, document);
-    }
+    if (page_ready && !ui.stood && op1f_page_stand_in(&op1f_card_garden, ASK, document)) ui.stood = 1;
     if (page_ready && shown) {
         u32 step = ms - ms % 66u, sig = state_sig();
         int shift = now->shift != 0;
@@ -2008,6 +1577,5 @@ extern "C" void garden_frame(const Op1fFrame* now) {
             ui.step = step;
             dress(step, shift);
         }
-        if (CURRENT_SCREEN == (u32)PAGE_SCREEN) overlays_on_top();
     }
 }

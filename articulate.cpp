@@ -1,5 +1,4 @@
 #include "articulate.h"
-
 const uint8_t art_kind_tones[ART_KINDS][4] = {
     {0, 4, 7, 0},
     {0, 3, 7, 0},
@@ -16,20 +15,15 @@ const uint8_t art_kind_tones[ART_KINDS][4] = {
 };
 const uint8_t art_kind_count[ART_KINDS] = {3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 3};
 const char* const art_kind_names[ART_KINDS] = {"maj", "min", "sus4", "dim", "aug", "qrt", "sus2", "b5", "pow", "qnt", "s24", "phr"};
-
 const uint8_t art_pollen_interval[ART_POLLEN] = {9, 10, 11, 14, 13, 15, 18, 21, 17, 20, 8, 2};
 const char* const art_pollen_names[ART_POLLEN] = {"6", "-7", "+7", "9", "b9", "#9", "#11", "13", "11", "b13", "#5", "2"};
-
 const char* const art_style_names[ART_STYLES] = {"chord", "strum", "strum 2", "slop", "arp", "farp", "pattern", "harp"};
 const char* const art_order_names[ART_ORDERS] = {"up", "down", "updown", "downup", "inside", "random"};
 const char* const art_voicing_names[ART_VOICINGS] = {"close", "drop 2", "drop 3", "open", "shell", "spread"};
-
 static const uint8_t TWENTYFOURTHS[ART_DIVS] = {192, 96, 48, 32, 24, 16, 12, 8, 6, 4, 3, 2};
-
 uint32_t art_div(uint32_t d) {
     return (uint32_t)TWENTYFOURTHS[d < ART_DIVS ? d : 8u] * (ART_BEAT / 24u);
 }
-
 typedef struct { uint8_t tone, weight; } step_t;
 typedef struct { uint8_t at, len; } phrase_t;
 const char* const art_phrase_names[ART_PHRASES] = {
@@ -57,9 +51,7 @@ static const phrase_t PHRASES[ART_PHRASES] = {
     {0, 4}, {4, 4}, {8, 6}, {14, 6}, {20, 6}, {26, 6}, {32, 6}, {38, 8},
     {46, 3}, {49, 8}, {57, 8}, {65, 8}, {73, 4}, {77, 8}, {85, 6}, {91, 8}};
 static_assert(sizeof STEPS / sizeof STEPS[0] == 99u, "the phrase table and its index agree");
-
 static const uint8_t WEIGHT16[5] = {0, 7, 10, 13, 16};
-
 static uint32_t pitch_class(int32_t x) {
     while (x < 0) x += 12;
     while (x >= 12) x -= 12;
@@ -80,7 +72,6 @@ static int holds(const uint8_t* a, uint32_t n, uint8_t x) {
     for (uint32_t i = 0; i < n; ++i) if (a[i] == x) return 1;
     return 0;
 }
-
 int art_pollen_silent(uint32_t q, uint32_t e) {
     if (q >= ART_KINDS || e >= ART_POLLEN) return 0;
     const uint32_t want = pitch_class(art_pollen_interval[e]);
@@ -88,7 +79,6 @@ int art_pollen_silent(uint32_t q, uint32_t e) {
         if (pitch_class(art_kind_tones[q][i]) == want) return 1;
     return 0;
 }
-
 uint32_t art_chord(uint32_t q, uint32_t mask, uint8_t out[ART_CHORD_MAX]) {
     if (q >= ART_KINDS) q = 0;
     uint32_t n = 0;
@@ -98,7 +88,6 @@ uint32_t art_chord(uint32_t q, uint32_t mask, uint8_t out[ART_CHORD_MAX]) {
     ascending(out, n);
     return n;
 }
-
 uint32_t art_base(int32_t root, uint32_t q, uint32_t mask, uint8_t out[ART_CHORD_MAX]) {
     uint8_t steps[ART_CHORD_MAX];
     const uint32_t m = art_chord(q, mask, steps);
@@ -110,7 +99,6 @@ uint32_t art_base(int32_t root, uint32_t q, uint32_t mask, uint8_t out[ART_CHORD
     ascending(out, n);
     return n;
 }
-
 uint32_t art_cascade(const uint8_t* base, uint32_t n, int32_t k, uint8_t out[ART_CHORD_MAX]) {
     if (n > ART_CHORD_MAX) n = ART_CHORD_MAX;
     for (uint32_t i = 0; i < n; ++i) out[i] = base[i];
@@ -120,7 +108,6 @@ uint32_t art_cascade(const uint8_t* base, uint32_t n, int32_t k, uint8_t out[ART
     while (k < 0 && out[n - 1u] >= 12) { out[n - 1u] = (uint8_t)(out[n - 1u] - 12); ascending(out, n); ++k; }
     return n;
 }
-
 uint32_t art_voicing(uint32_t v, uint8_t* notes, uint32_t n) {
     if (n > ART_CHORD_MAX) n = ART_CHORD_MAX;
     int32_t x[ART_CHORD_MAX];
@@ -145,13 +132,11 @@ uint32_t art_voicing(uint32_t v, uint8_t* notes, uint32_t n) {
     ascending(notes, k);
     return k;
 }
-
 uint32_t art_voice(const uint8_t* base, uint32_t n, int32_t k, uint32_t v, uint8_t out[ART_CHORD_MAX]) {
     const int32_t most = 2 * (int32_t)n;
     k = k > most ? most : k < -most ? -most : k;
     return art_voicing(v, out, art_cascade(base, n, k, out));
 }
-
 int32_t art_lead(const uint8_t* prev, uint32_t nprev, const uint8_t* base, uint32_t n, uint32_t v, int32_t limit, int32_t cur) {
     if (nprev == 0 || n == 0) return cur;
     int32_t best = cur, best_move = 0x7fffffff;
@@ -173,9 +158,7 @@ int32_t art_lead(const uint8_t* prev, uint32_t nprev, const uint8_t* base, uint3
     }
     return best;
 }
-
 typedef struct { uint8_t pitch, from; } tone_t;
-
 static uint32_t line_of(const art_req* r, tone_t line[ART_LINE_MAX]) {
     const uint32_t style = art_style_for(r->style, r->mono);
     const uint32_t octaves = style == ART_S_HARP ? 3u : (style == ART_S_STRUM2 || style == ART_S_FARP) ? 2u : 1u;
@@ -203,16 +186,13 @@ static uint32_t line_of(const art_req* r, tone_t line[ART_LINE_MAX]) {
     }
     return n;
 }
-
 uint32_t art_line(const art_req* r, uint8_t line[ART_LINE_MAX]) {
     tone_t t[ART_LINE_MAX];
     const uint32_t n = line_of(r, t);
     for (uint32_t i = 0; i < n; ++i) line[i] = t[i].pitch;
     return n;
 }
-
 static const phrase_t* phrase_of(const art_req* r) { return &PHRASES[r->phrase < ART_PHRASES ? r->phrase : 0u]; }
-
 uint32_t art_length(const art_req* r) {
     const uint32_t style = art_style_for(r->style, r->mono);
     if (!art_stepped(style)) return 1u;
@@ -221,21 +201,18 @@ uint32_t art_length(const art_req* r) {
     const uint32_t n = art_line(r, line);
     return (r->order == ART_O_UPDOWN || r->order == ART_O_DOWNUP) && n > 1u ? 2u * n - 2u : n;
 }
-
 uint32_t art_period(const art_req* r) {
     const uint32_t style = art_style_for(r->style, r->mono);
     if (art_stepped(style)) return r->step;
     if (!r->loop) return 0;
     return style == ART_S_CHORD ? r->step : r->bar;
 }
-
 static int32_t humanise(const art_req* r, int32_t vel, uint32_t* rng) {
     if (r->human == 0) return vel;
     const uint32_t amount = art_below(rng, 101u) * r->human;
     vel -= (int32_t)((amount * 1585u) >> 10);
     return vel < 5160 ? 5160 : vel;
 }
-
 uint32_t art_step(const art_req* r, uint32_t pos, uint32_t* rng, art_note out[ART_LINE_MAX]) {
     const uint32_t style = art_style_for(r->style, r->mono);
     tone_t line[ART_LINE_MAX];
@@ -246,7 +223,6 @@ uint32_t art_step(const art_req* r, uint32_t pos, uint32_t* rng, art_note out[AR
     const int stepped = art_stepped(style), strummed = art_strummed(style);
     uint32_t from = 0, to = n;
     int32_t velocity = r->velocity;
-
     if (stepped) {
         uint32_t at = pos;
         while (at >= length) at -= length;
@@ -265,7 +241,6 @@ uint32_t art_step(const art_req* r, uint32_t pos, uint32_t* rng, art_note out[AR
         from = at;
         to = at + 1u;
     } else if (style == ART_S_CHORD) to = r->n < n ? r->n : n;
-
     if (strummed) {
         if (r->order == ART_O_RANDOM)
             for (uint32_t i = n; i > 1u; --i) {
@@ -278,13 +253,11 @@ uint32_t art_step(const art_req* r, uint32_t pos, uint32_t* rng, art_note out[AR
         if (downward)
             for (uint32_t i = 0, j = n - 1u; i < j; ++i, --j) { tone_t t = line[i]; line[i] = line[j]; line[j] = t; }
     }
-
     const int gated = stepped || style == ART_S_HARP || r->loop;
     const uint32_t gap = style == ART_S_HARP ? r->step >> 2 : r->step;
     const uint32_t span = (stepped || style == ART_S_CHORD) ? r->step : r->bar;
     uint32_t gate = gated ? art_q16(span, art_pct(r->gate)) : 0u;
     if (gated && gate == 0) gate = 1u;
-
     uint32_t k = 0, when = 0;
     for (uint32_t i = from; i < to; ++i, when += gap) {
         art_note* o = &out[k++];

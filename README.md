@@ -1,6 +1,7 @@
 # Garden
 
-A chord player for the OP-1 Field, as an [open-field](https://github.com/LaP0573/open-field) pack for OS 1.7.3.
+A chord player for the OP-1 Field, as an [open-field](https://github.com/LaP0573/open-field) pack for OS 1.7.3
+(open-field 0.12 or later).
 
 ![Garden](docs/garden.gif)
 
@@ -9,7 +10,7 @@ Use at your own risk; see [LICENSE](LICENSE).
 
 ## Install
 
-Put `garden.pack` (from [releases](../../releases)) in the unit's `packs` folder next to open-field's `base.pack`, and
+Put `garden.pack` (in this repository, or from [releases](../../releases)) in the unit's `packs` folder next to open-field's `base.pack`, and
 restart. Hold **Help** while switching on to start without packs.
 
 ## Play
@@ -18,7 +19,7 @@ restart. Hold **Help** while switching on to start without packs.
 
 | Key | Page | Blue | Tan | Gray | Orange |
 | --- | --- | --- | --- | --- | --- |
-| T1 | play | cascade; Shift: echo (push: voice leading) | style; Shift: rate (push: hold) | voicing, order or phrase; Shift: the other (push: chord banks) | Boost; Shift: pulse (push: extension banks) |
+| T1 | play | cascade; Shift: echo (push: voice leading) | style; Shift: rate (push: chord banks) | voicing, order or phrase; Shift: the other (push: hold) | Boost; Shift: pulse (push: extension banks) |
 | T2 | rhythm | loop | length | swing | human |
 | T3 | palette | chord bank A | chord bank B | extension bank A | extension bank B |
 | T4 | gardens | garden (push: plant) | root | kind | extension square (push: next) |

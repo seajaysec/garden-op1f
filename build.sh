@@ -11,7 +11,7 @@ for need in "$OF/tools" "$XY/tooling" "$TC/bfin-elf-g++"; do
 done
 
 mkdir -p "$WORK/open-field/open-xy/local/toolchain"
-rsync -a --delete --exclude build --exclude out --exclude out-set --exclude open-xy --exclude .git "$OF/" "$WORK/open-field/"
+rsync -a --chmod=u+w --delete --exclude build --exclude out --exclude out-set --exclude open-xy --exclude .git "$OF/" "$WORK/open-field/"
 mkdir -p "$WORK/open-field/open-xy/local/toolchain"
 rsync -a --delete --exclude __pycache__ "$XY/tooling/" "$WORK/open-field/open-xy/tooling/"
 ln -sfn "$TC" "$WORK/open-field/open-xy/local/toolchain/bin"
@@ -24,14 +24,13 @@ if [ -n "$FIELD_DISPLAY" ] && [ -d "$FIELD_DISPLAY" ]; then
 else
   echo "FIELD_DISPLAY not set: picture not checked" >&2
 fi
-python3 -I tools/table_build.py --profile ../garden/profile.json --all
 python3 -I tools/pack_build.py card --recipe ../garden/recipe.json --out ../garden/garden_card.s
 python3 -I tools/pack_build.py pictures --recipe ../garden/recipe.json --out ../garden/garden_pictures.s
 mkdir -p "$ROOT/out"
 rm -f "$ROOT/out/garden.pack"
 python3 -I tools/pack_build.py build3 \
   --recipe ../garden/recipe.json \
-  --profile ../garden/profile.json \
+  --profile profiles/op1f-1.7.3.json \
   --out ../garden/out/garden.pack
 python3 -I tools/pack_build.py check --pack ../garden/out/garden.pack | tee "$WORK/check.txt"
 if grep '^wants:' "$WORK/check.txt" | grep -q '___'; then

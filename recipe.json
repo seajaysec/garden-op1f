@@ -1,14 +1,12 @@
 {
   "about": "Garden: a chord player in the sequencer list.",
   "name": "garden",
-  "version": 1,
+  "version": 2,
   "interface": 1,
   "build": "garden",
   "sources": [
-    "../garden/garden.s",
     "../garden/articulate.cpp",
     "../garden/garden.cpp",
-    "../garden/garden_table.s",
     "../garden/garden_card.s",
     "../garden/garden_pictures.s"
   ],
@@ -22,7 +20,7 @@
     }
   ],
   "card": {
-    "level": 3,
+    "level": 6,
     "frame": "garden_frame",
     "pick": null,
     "pictures": true,
@@ -32,6 +30,20 @@
         "name": "garden",
         "place": "garden",
         "shown": false
+      }
+    ],
+    "asks": [
+      {
+        "kind": "sequencer",
+        "name": "garden",
+        "synth_only": true,
+        "all_midi": false,
+        "shown": "garden_shown",
+        "tick": "garden_tick",
+        "key": "garden_key",
+        "run": "garden_run",
+        "octave": null,
+        "playing": null
       }
     ]
   },
