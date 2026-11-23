@@ -225,7 +225,7 @@ static void request_of(art_req* r, int velocity) {
     r->order = g.order;
     r->phrase = g.phrase;
     r->mono = (uint8_t)st.mono;
-    r->loop = g.loop;
+    r->loop = g.loop || (g.hold && art_stepped(art_style_for(g.style, (u32)st.mono)));
     r->gate = g.length;
     r->human = g.human;
     r->pad_ = 0;
@@ -406,7 +406,6 @@ static void end_gesture() {
     u32 len = art_length(&r), p = st.pos;
     if (!len) len = 1;
     u32 rem = umod(p, len), end = rem ? p + (len - rem) : p;
-    if (!r.loop && end > len) end = len;
     st.ending = 1;
     st.end_pos = end;
     st.src = SRC_HELD;
@@ -431,7 +430,7 @@ static void advance() {
             art_req r;
             request_of(&r, 1);
             if (st.ending && st.pos >= st.end_pos) { end_now(); return; }
-            if (!r.loop && st.pos >= art_length(&r)) st.period = 0;
+            if (!st.ending && !r.loop && st.pos >= art_length(&r)) st.period = 0;
             else {
                 if (art_strummed(art_style_for(r.style, r.mono))) let_go_now();
                 strike();
@@ -1185,7 +1184,7 @@ static void status_row(u32 ms, int shift) {
     l[1].put(shift ? RATE_NAME[g.rate] : style_name(style));
     int gray_turned = turned_knob == 2 && ms - turned_ms < 1000u;
     if (!shift && !gray_turned && view.finishing) l[2].put("finishing");
-    else if (!shift && !gray_turned && g.hold) l[2].put(g.loop ? "latch loop" : art_stepped(art_style_for((u32)style, (u32)st.mono)) ? "latch once" : "latch ring");
+    else if (!shift && !gray_turned && g.hold) l[2].put(g.loop || art_stepped(art_style_for((u32)style, (u32)st.mono)) ? "latch loop" : "latch ring");
     else if (style == STYLE_PATTERN) l[2].put(shift ? VTYPE_NAME[g.vtype] : art_phrase_names[g.phrase]);
     else if (arp ^ shift) l[2].put(ORDER_NAME[g.order]);
     else l[2].put(VTYPE_NAME[g.vtype]);
