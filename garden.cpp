@@ -492,7 +492,7 @@ static void walk_toggle(int from) {
 static void walk_poll() {
     if (!st.walk || (u32)(st.now - st.walk_at) < st.walk_span) return;
     int next = walk_next();
-    if (next < 0) { st.walk = 0; return; }
+    if (next < 0) { st.walk = 0; end_gesture(); return; }
     walk_play(next);
 }
 static void publish_view() {
@@ -774,6 +774,13 @@ static void sow() {
         g.pad_used[i] = 1;
     }
 }
+static void reap() {
+    for (int i = 0; i < 8; ++i) {
+        g.pad_used[i] = 0;
+        g.seed_q[i] = NONE;
+        for (int k = 0; k < 4; ++k) g.seed_ext[i][k] = NONE;
+    }
+}
 static void plant_now(int i) {
     g.seed_q[i] = g.quality;
     int k = 0;
@@ -872,6 +879,7 @@ static void push(int knob, int shift) {
         if (shift) {
             if (knob == 0) { walk_req = g.pad_sel + 1; edit = 0; }
             else if (knob == 2 && page_where == 1u) sow();
+            else if (knob == 3 && page_where == 1u) reap();
             else edit = 0;
         }
         else if (knob == 0) plant_now(g.pad_sel);
@@ -1533,7 +1541,7 @@ static void help_words(int pg, int shift, const char** turn, const char** push) 
     } else if (shift) {
         turn[0] = "walk length"; turn[1] = "walk order";
         push[0] = view.walking ? "push: stop the walk" : "push: walk";
-        if (page_where == 1u) push[2] = "push: sow empty gardens";
+        if (page_where == 1u) { push[2] = "push: sow empty gardens"; push[3] = "push: reap all gardens"; }
     } else {
         turn[0] = "garden"; turn[1] = "root"; turn[2] = "kind"; turn[3] = "extension square";
         push[0] = "push: plant the chord"; push[3] = "push: next square";
