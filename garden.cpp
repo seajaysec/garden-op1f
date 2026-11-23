@@ -150,9 +150,10 @@ static struct {
     int planter;
     int ending;
     u32 end_pos;
+    int latch_key;
 } st;
 static volatile struct {
-    unsigned char note[ART_CHORD_MAX], n, playing, root, kind, boost_note, boosting, planter, walking, stepping, echoing;
+    unsigned char note[ART_CHORD_MAX], n, playing, root, kind, boost_note, boosting, planter, walking, stepping, echoing, finishing;
     unsigned short mask;
     u32 pos, beat16, walk_q10;
 } view;
@@ -362,6 +363,7 @@ static void begin_gesture(int src) {
     st.on = 1;
     st.src = src;
     st.ending = 0;
+    st.latch_key = 0;
     st.pos = 0;
     st.anchor = st.now;
     st.period = ticks_of(art_period(&r));
@@ -373,6 +375,7 @@ static void begin_gesture(int src) {
 static void release_gesture() {
     let_go_now();
     st.ending = 0;
+    st.latch_key = 0;
     st.on = 0;
     st.src = SRC_NONE;
     st.key_id = 0;
@@ -509,6 +512,7 @@ static void publish_view() {
     view.walking = (unsigned char)st.walk;
     view.stepping = (unsigned char)(st.on && st.period != 0);
     view.echoing = (unsigned char)echo_active();
+    view.finishing = (unsigned char)(st.on && st.ending);
     view.pos = st.pos;
     view.beat16 = st.on ? (((st.now - st.anchor) / 24u) & 15u) : 16u;
     view.walk_q10 = st.walk && st.walk_span ? udiv((st.now - st.walk_at) << 10, st.walk_span) : 0u;
@@ -538,7 +542,11 @@ static int key_down(const Op1fKey* e) {
     key_calls = key_calls + 1;
     u32 m = mask_off();
     int used = 0;
-    if (seq_live() && st.src != SRC_KEY) {
+    if (seq_live() && st.src == SRC_HELD && st.latched && !st.ending && st.latch_key && st.latch_key == key_id(e)) {
+        end_gesture();
+        publish_view();
+        used = 1;
+    } else if (seq_live() && st.src != SRC_KEY) {
         engine_start();
         st.walk = 0;
         st.key_id = key_id(e);
@@ -562,7 +570,7 @@ static void key_up(const Op1fKey* e) {
     u32 m = mask_off();
     if (st.src == SRC_KEY && st.key_id == key_id(e)) {
         release_matched = release_matched + 1;
-        if (g.hold) { st.latched = 1; st.key_id = 0; st.src = SRC_HELD; }
+        if (g.hold) { st.latched = 1; st.latch_key = st.key_id; st.key_id = 0; st.src = SRC_HELD; }
         else end_gesture();
         publish_view();
     }
@@ -617,12 +625,14 @@ extern "C" void garden_tick(const Op1fTick* now) {
     pad_up_req = 0;
     walk_req = 0;
     hold_req = 0;
-    if (down && seq_live()) {
+    if (down && seq_live() && g.hold && st.on && st.src == SRC_PAD && st.planter == down - 1 && !st.walk && !st.ending)
+        end_gesture();
+    else if (down && seq_live()) {
         int k = down - 1;
         if (st.walk) { st.walk_pad = k; st.walk_at = st.now; }
         if (planted(k)) { play_planter(k, SRC_PAD); ++pads; }
     }
-    if (up && st.src == SRC_PAD && !g.hold && !st.walk && st.planter == up - 1) end_gesture();
+    if (up && st.src == SRC_PAD && !g.hold && !st.walk && st.planter == up - 1 && !st.ending) end_gesture();
     if (walk && seq_live()) walk_toggle(walk - 1);
     if (hold) {
         if (st.ending) release_gesture();
@@ -1173,7 +1183,10 @@ static void status_row(u32 ms, int shift) {
     if (shift) l[0].put(ECHO_NAME[g.echo < ECHO_RATES ? g.echo : 0]);
     else { if (g.cascade > 0) l[0].put("+"); l[0].num(g.cascade); }
     l[1].put(shift ? RATE_NAME[g.rate] : style_name(style));
-    if (style == STYLE_PATTERN) l[2].put(shift ? VTYPE_NAME[g.vtype] : art_phrase_names[g.phrase]);
+    int gray_turned = turned_knob == 2 && ms - turned_ms < 1000u;
+    if (!shift && !gray_turned && view.finishing) l[2].put("finishing");
+    else if (!shift && !gray_turned && g.hold) l[2].put(g.loop ? "latch loop" : art_stepped(art_style_for((u32)style, (u32)st.mono)) ? "latch once" : "latch ring");
+    else if (style == STYLE_PATTERN) l[2].put(shift ? VTYPE_NAME[g.vtype] : art_phrase_names[g.phrase]);
     else if (arp ^ shift) l[2].put(ORDER_NAME[g.order]);
     else l[2].put(VTYPE_NAME[g.vtype]);
     l[3].put(shift ? PULSE_NAME[g.pulse] : BOOST_NAME[g.boost + 2]);
@@ -1529,7 +1542,7 @@ static void help_words(int pg, int shift, const char** turn, const char** push) 
         turn[1] = shift ? "rate" : "style";
         turn[2] = style == STYLE_PATTERN && !shift ? "phrase" : style != STYLE_PATTERN && (arp ^ shift) ? "arp order" : "voicing";
         turn[3] = shift ? "boost pulse" : "boost";
-        if (!shift) { push[0] = "push: voice leading"; push[1] = "push: chord banks"; push[2] = "push: hold"; push[3] = "push: extension banks"; }
+        if (!shift) { push[0] = "push: voice leading"; push[1] = "push: chord banks"; push[2] = "push: latch"; push[3] = "push: extension banks"; }
         else if (page_where == 1u) push[1] = drum_mode() ? "push: melodic mode" : "push: drum mode";
     } else if (pg == PAGE_RHYTHM) {
         if (shift) turn[0] = "ending";
