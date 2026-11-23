@@ -40,6 +40,9 @@ static u32 isqrt(u32 x) {
     return r;
 }
 enum { STYLE_CHORD = 0, STYLE_STRUM, STYLE_STRUM2, STYLE_SLOP, STYLE_ARP, STYLE_FARP, STYLE_PATTERN, STYLE_HARP };
+enum { CYC_FREE, CYC_HALF, CYC_BAR, CYC_TWO, CYCLES };
+enum { DOWN_REPEAT, DOWN_REST, DOWN_HOLD, DOWNS };
+static u32 grid_align;
 enum { END_CUT, END_FINISH, END_ROOT_STEP, END_ROOT_Q, END_ROOT_H, END_ROOT_BAR, ENDINGS };
 enum { NONE = 255, PULSE_RATES = 10, ECHO_RATES = 9, WALK_LENS = 4, WALK_ORDERS = 4, MOMENTARY_MS = 300 };
 struct Settings {
@@ -52,7 +55,7 @@ struct Settings {
     unsigned char echo, melodic;
     unsigned char kinds[2][4], extsets[2][4];
     unsigned char seed_q[8], seed_ext[8][4], pad_root[8], pad_used[8];
-    unsigned char ending, spare;
+    unsigned char ending, cycle;
 };
 static_assert(sizeof(Settings) == 108, "the settings file keeps its size: older files are read as they are");
 enum { SAVE_MAGIC = 0x4e445247 , SAVE_VERSION = 6 };
@@ -84,7 +87,8 @@ static int settings_valid(const Settings* s) {
         s->order > 5 || s->phrase >= ART_PHRASES || s->vtype > 5 || s->pulse >= PULSE_RATES || s->loop > 1 || s->hold > 1 ||
         s->lead > 1 || s->length < 1 || s->length > 100 || s->swing < 50 || s->swing > 75 || s->human > 100 ||
         s->quality > 11 || s->fl > 1 || s->pf > 1 || s->pad_sel > 7 || s->square > 3 || s->walk_len >= WALK_LENS ||
-        s->walk_order >= WALK_ORDERS || s->root > 127 || (s->extensions >> 12) || s->echo >= ECHO_RATES || s->melodic > 1 || s->ending >= ENDINGS)
+        s->walk_order >= WALK_ORDERS || s->root > 127 || (s->extensions >> 12) || s->echo >= ECHO_RATES || s->melodic > 1 || s->ending >= ENDINGS ||
+        (s->cycle >> 4) || ((s->cycle >> 2) & 3u) >= DOWNS)
         return 0;
     for (int r = 0; r < 2; ++r)
         for (int i = 0; i < 4; ++i) if (s->kinds[r][i] > 11 || s->extsets[r][i] > 11) return 0;
@@ -95,6 +99,12 @@ static int settings_valid(const Settings* s) {
     }
     return 1;
 }
+static int cycle_default() { return grid_align ? CYC_BAR : CYC_FREE; }
+static int cycle_of() { int c = (int)(g.cycle & 3u) + cycle_default(); return c >= CYCLES ? c - CYCLES : c; }
+static void cycle_set(int c) { g.cycle = (unsigned char)((g.cycle & ~3u) | ((u32)(c - cycle_default() + CYCLES) & 3u)); }
+static int down_of() { return (int)((g.cycle >> 2) & 3u); }
+static void down_set(int d) { g.cycle = (unsigned char)((g.cycle & 3u) | ((u32)d << 2)); }
+static u32 cycle_ticks() { static const unsigned short T[CYCLES] = { 0, 192, 384, 768 }; return T[cycle_of()]; }
 static int ending_of() { int e = g.ending + END_FINISH; return e >= ENDINGS ? e - ENDINGS : e; }
 static void ending_set(int e) { g.ending = (unsigned char)(e >= END_FINISH ? e - END_FINISH : e + ENDINGS - END_FINISH); }
 static u32 seed_mask(int i) {
@@ -152,6 +162,8 @@ static struct {
     u32 end_pos;
     int latch_key;
     u32 grid_base;
+    u32 lpos;
+    u32 cyc, next_cycle;
 } st;
 static volatile struct {
     unsigned char note[ART_CHORD_MAX], n, playing, root, kind, boost_note, boosting, planter, walking, stepping, echoing, finishing;
@@ -339,10 +351,13 @@ static void strike() {
     art_req r;
     request_of(&r, st.vel * 258);
     art_note nt[ART_LINE_MAX];
-    u32 n = art_step(&r, st.pos, &st.rng, nt);
+    u32 n = art_step(&r, st.lpos, &st.rng, nt);
+    int hold_to_cycle = st.cyc && down_of() == DOWN_HOLD && st.lpos + 1u == art_length(&r) && (int)(st.next_cycle - st.now) > 0;
     ++st.pos;
+    ++st.lpos;
     for (u32 i = 0; i < n; ++i) {
         u32 delay = ticks_of(nt[i].delay), gate = nt[i].gate ? ticks_of(nt[i].gate) : 0u;
+        if (hold_to_cycle && gate) gate = st.next_cycle - st.now;
         int vel = clampi(nt[i].velocity > 32767 ? 127 : (int)((u32)nt[i].velocity >> 8), 1, 127);
         if (delay == 0) {
             note_on(nt[i].note, vel);
@@ -356,7 +371,6 @@ static void strike() {
 }
 static const unsigned char PULSE_DIV[PULSE_RATES] = { 0, 1, 2, 4, 5, 6, 7, 8, 9, 10 };
 static u32 pulse_step() { return g.pulse && g.pulse < PULSE_RATES ? ticks_of(art_div(PULSE_DIV[g.pulse])) : 0u; }
-static u32 grid_align;
 static u32 on_grid(u32 unit) { return grid_align && unit ? st.now - umod(st.now, unit) : st.now; }
 static void begin_gesture(int src) {
     let_go_now();
@@ -369,7 +383,12 @@ static void begin_gesture(int src) {
     st.ending = 0;
     st.latch_key = 0;
     st.pos = 0;
+    st.lpos = 0;
     st.period = ticks_of(art_period(&r));
+    u32 sty = art_style_for(r.style, r.mono), cyc = cycle_ticks();
+    if (cyc && r.loop && art_strummed(sty)) st.period = cyc;
+    st.cyc = cyc && r.loop && art_stepped(sty) ? cyc : 0u;
+    if (st.cyc) st.next_cycle = on_grid(st.cyc) + st.cyc;
     st.anchor = on_grid(st.period);
     st.grid_base = grid_align && st.period ? udiv(st.anchor, st.period) : 0u;
     strike();
@@ -408,9 +427,10 @@ static void end_gesture() {
     if (!st.period) { end_now(); return; }
     art_req r;
     request_of(&r, 1);
-    u32 len = art_length(&r), p = st.pos;
+    u32 len = art_length(&r), p = st.pos, lp = st.lpos;
     if (!len) len = 1;
-    u32 rem = umod(p, len), end = rem ? p + (len - rem) : p;
+    u32 rem = lp >= len && st.cyc && down_of() != DOWN_REPEAT ? 0u : umod(lp, len);
+    u32 end = rem ? p + (len - rem) : p;
     st.ending = 1;
     st.end_pos = end;
     st.src = SRC_HELD;
@@ -434,8 +454,15 @@ static void advance() {
         if ((int)(st.now - due) >= 0) {
             art_req r;
             request_of(&r, 1);
+            if (st.cyc && (int)(due - st.next_cycle) >= 0) {
+                while ((int)(due - st.next_cycle) >= 0) st.next_cycle += st.cyc;
+                if (st.ending) { end_now(); return; }
+                st.lpos = 0;
+            }
             if (st.ending && st.pos >= st.end_pos) { end_now(); return; }
-            if (!st.ending && !r.loop && st.pos >= art_length(&r)) st.period = 0;
+            u32 len = art_length(&r);
+            if (!st.ending && !r.loop && st.lpos >= len) st.period = 0;
+            else if (st.cyc && down_of() != DOWN_REPEAT && st.lpos >= len) ++st.pos;
             else {
                 if (art_strummed(art_style_for(r.style, r.mono))) let_go_now();
                 strike();
@@ -832,7 +859,12 @@ static void turn_play(int knob, int steps, int shift) {
     }
 }
 static void turn_rhythm(int knob, int steps, int shift) {
-    if (shift) { if (knob == 0) ending_set(clampi(ending_of() + steps, 0, ENDINGS - 1)); return; }
+    if (shift) {
+        if (knob == 0) ending_set(clampi(ending_of() + steps, 0, ENDINGS - 1));
+        else if (knob == 1) cycle_set(clampi(cycle_of() + steps, 0, CYCLES - 1));
+        else if (knob == 2) down_set(clampi(down_of() + steps, 0, DOWNS - 1));
+        return;
+    }
     if (knob == 0) g.loop = (unsigned char)clampi(g.loop + steps, 0, 1);
     else if (knob == 1) g.length = (unsigned char)clampi(g.length + 5 * steps, 1, 100);
     else if (knob == 2) g.swing = (unsigned char)clampi(g.swing + steps, 50, 75);
@@ -1398,6 +1430,8 @@ static void play_page(u32 ms, int shift) {
     say(TX_ROOT, 240 + sway, 85, name);
 }
 static const char* const ENDING_NAME[ENDINGS] = { "cut", "finish", "root step", "root 1/4", "root 1/2", "root bar" };
+static const char* const CYCLE_NAME[CYCLES] = { "free", "1/2 bar", "1 bar", "2 bars" };
+static const char* const DOWN_NAME[DOWNS] = { "repeat", "rest", "hold" };
 static void rhythm_page(int shift) {
     use(PAGE2);
     beat_dots();
@@ -1455,6 +1489,15 @@ static void rhythm_page(int shift) {
     Line l;
     say(TX_T2L0, 10, 36, shift ? "ending" : "loop");
     say(TX_T2V0, 10, 56, shift ? ENDING_NAME[ending_of()] : g.loop ? "on" : "off");
+    if (shift) {
+        say(TX_T2L1, 10, 146, "cycle");
+        say(TX_T2V1, 10, 166, CYCLE_NAME[cycle_of()]);
+        say(TX_T2L2, 392, 36, "downtime");
+        say(TX_T2V2, 392, 56, DOWN_NAME[down_of()]);
+        say(TX_T2L3, 392, 146, "");
+        say(TX_T2V3, 392, 166, "");
+        return;
+    }
     say(TX_T2L1, 10, 146, "length");
     l.clear(); l.num(g.length); l.put("%"); say(TX_T2V1, 10, 166, l.s);
     say(TX_T2L2, 392, 36, "swing");
@@ -1552,7 +1595,7 @@ static void help_words(int pg, int shift, const char** turn, const char** push) 
         if (!shift) { push[0] = "push: voice leading"; push[1] = "push: chord banks"; push[2] = "push: latch"; push[3] = "push: extension banks"; }
         else if (page_where == 1u) push[1] = drum_mode() ? "push: melodic mode" : "push: drum mode";
     } else if (pg == PAGE_RHYTHM) {
-        if (shift) turn[0] = "ending";
+        if (shift) { turn[0] = "ending"; turn[1] = "cycle"; turn[2] = "downtime"; }
         else { turn[0] = "loop"; turn[1] = "length"; turn[2] = "swing"; turn[3] = "human"; }
     } else if (pg == PAGE_PALETTE) {
         turn[0] = "chord bank a"; turn[1] = "chord bank b"; turn[2] = "extension bank a"; turn[3] = "extension bank b";
