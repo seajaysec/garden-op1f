@@ -40,6 +40,7 @@ static u32 isqrt(u32 x) {
     return r;
 }
 enum { STYLE_CHORD = 0, STYLE_STRUM, STYLE_STRUM2, STYLE_SLOP, STYLE_ARP, STYLE_FARP, STYLE_PATTERN, STYLE_HARP };
+enum { END_CUT, END_FINISH, END_ROOT_STEP, END_ROOT_Q, END_ROOT_H, END_ROOT_BAR, ENDINGS };
 enum { NONE = 255, PULSE_RATES = 10, ECHO_RATES = 9, WALK_LENS = 4, WALK_ORDERS = 4, MOMENTARY_MS = 300 };
 struct Settings {
     u32 magic, version;
@@ -51,7 +52,9 @@ struct Settings {
     unsigned char echo, kit;
     unsigned char kinds[2][4], extsets[2][4];
     unsigned char seed_q[8], seed_ext[8][4], pad_root[8], pad_used[8];
+    unsigned char ending, spare;
 };
+static_assert(sizeof(Settings) == 108, "the settings file keeps its size: older files are read as they are");
 enum { SAVE_MAGIC = 0x4e445247 , SAVE_VERSION = 6 };
 static Settings g;
 static volatile u32 edits;
@@ -81,7 +84,7 @@ static int settings_valid(const Settings* s) {
         s->order > 5 || s->phrase >= ART_PHRASES || s->vtype > 5 || s->pulse >= PULSE_RATES || s->loop > 1 || s->hold > 1 ||
         s->lead > 1 || s->length < 1 || s->length > 100 || s->swing < 50 || s->swing > 75 || s->human > 100 ||
         s->quality > 11 || s->fl > 1 || s->pf > 1 || s->pad_sel > 7 || s->square > 3 || s->walk_len >= WALK_LENS ||
-        s->walk_order >= WALK_ORDERS || s->root > 127 || (s->extensions >> 12) || s->echo >= ECHO_RATES || s->kit > 1)
+        s->walk_order >= WALK_ORDERS || s->root > 127 || (s->extensions >> 12) || s->echo >= ECHO_RATES || s->kit > 1 || s->ending >= ENDINGS)
         return 0;
     for (int r = 0; r < 2; ++r)
         for (int i = 0; i < 4; ++i) if (s->kinds[r][i] > 11 || s->extsets[r][i] > 11) return 0;
@@ -92,6 +95,8 @@ static int settings_valid(const Settings* s) {
     }
     return 1;
 }
+static int ending_of() { int e = g.ending + END_FINISH; return e >= ENDINGS ? e - ENDINGS : e; }
+static void ending_set(int e) { g.ending = (unsigned char)(e >= END_FINISH ? e - END_FINISH : e + ENDINGS - END_FINISH); }
 static u32 seed_mask(int i) {
     u32 m = 0;
     for (int j = 0; j < 4; ++j) if (g.seed_ext[i][j] < 12) m |= 1u << g.seed_ext[i][j];
@@ -143,6 +148,8 @@ static struct {
     int walk, walk_pad, walk_dir;
     u32 walk_at, walk_span;
     int planter;
+    int ending;
+    u32 end_pos;
 } st;
 static volatile struct {
     unsigned char note[ART_CHORD_MAX], n, playing, root, kind, boost_note, boosting, planter, walking, stepping, echoing;
@@ -353,6 +360,7 @@ static void begin_gesture(int src) {
     request_of(&r, 1);
     st.on = 1;
     st.src = src;
+    st.ending = 0;
     st.pos = 0;
     st.anchor = st.now;
     st.period = ticks_of(art_period(&r));
@@ -363,6 +371,7 @@ static void begin_gesture(int src) {
 }
 static void release_gesture() {
     let_go_now();
+    st.ending = 0;
     st.on = 0;
     st.src = SRC_NONE;
     st.key_id = 0;
@@ -374,6 +383,31 @@ static void release_gesture() {
 static u32 swing_of(u32 pos) {
     if (!(pos & 1u) || g.swing <= 50) return 0;
     return (st.period * (u32)(g.swing - 50) * 41u) >> 12;
+}
+static void end_now() {
+    int e = ending_of(), root = st.root, vel = st.vel > 0 ? st.vel : 100;
+    release_gesture();
+    u32 len = e == END_ROOT_STEP ? ticks_of(art_div(g.rate)) : e == END_ROOT_Q ? 96u : e == END_ROOT_H ? 192u :
+              e == END_ROOT_BAR ? (u32)TICKS_PER_BAR : 0u;
+    if (!len) return;
+    note_on(root, vel);
+    schedule(root, vel, st.now + len, 0);
+}
+static void end_gesture() {
+    int e = ending_of();
+    if (!st.on || e == END_CUT || st.ending) { release_gesture(); return; }
+    if (!st.period) { end_now(); return; }
+    art_req r;
+    request_of(&r, 1);
+    u32 len = art_length(&r), p = st.pos;
+    if (!len) len = 1;
+    u32 rem = umod(p, len), end = rem ? p + (len - rem) : p;
+    if (!r.loop && end > len) end = len;
+    st.ending = 1;
+    st.end_pos = end;
+    st.src = SRC_HELD;
+    st.key_id = 0;
+    st.latched = 0;
 }
 static void drain() {
     for (int i = 0; i < st.nsched;) {
@@ -392,6 +426,7 @@ static void advance() {
         if ((int)(st.now - due) >= 0) {
             art_req r;
             request_of(&r, 1);
+            if (st.ending && st.pos >= st.end_pos) { end_now(); return; }
             if (!r.loop && st.pos >= art_length(&r)) st.period = 0;
             else {
                 if (art_strummed(art_style_for(r.style, r.mono))) let_go_now();
@@ -447,7 +482,7 @@ static void walk_play(int k) {
     st.walk_span = walk_span();
 }
 static void walk_toggle(int from) {
-    if (st.walk) { st.walk = 0; release_gesture(); return; }
+    if (st.walk) { st.walk = 0; end_gesture(); return; }
     for (int k = 0; k < 8; ++k) {
         int i = (from + k) & 7;
         if (planted(i)) { st.walk = 1; st.walk_dir = 0; walk_play(i); return; }
@@ -527,7 +562,7 @@ static void key_up(const Op1fKey* e) {
     if (st.src == SRC_KEY && st.key_id == key_id(e)) {
         release_matched = release_matched + 1;
         if (g.hold) { st.latched = 1; st.key_id = 0; st.src = SRC_HELD; }
-        else release_gesture();
+        else end_gesture();
         publish_view();
     }
     mask_on(m);
@@ -586,9 +621,12 @@ extern "C" void garden_tick(const Op1fTick* now) {
         if (st.walk) { st.walk_pad = k; st.walk_at = st.now; }
         if (planted(k)) { play_planter(k, SRC_PAD); ++pads; }
     }
-    if (up && st.src == SRC_PAD && !g.hold && !st.walk && st.planter == up - 1) release_gesture();
+    if (up && st.src == SRC_PAD && !g.hold && !st.walk && st.planter == up - 1) end_gesture();
     if (walk && seq_live()) walk_toggle(walk - 1);
-    if (hold && !g.hold && st.latched) release_gesture();
+    if (hold) {
+        if (st.ending) release_gesture();
+        else if (!g.hold && st.latched) end_gesture();
+    }
     walk_poll();
     advance();
     publish_view();
@@ -723,6 +761,18 @@ static u32 choice_step(int ext, u32 current, int d) {
     while (k >= (int)n) k -= (int)n;
     return list[k];
 }
+static uint32_t sow_rng;
+static void sow() {
+    sow_rng ^= op1f_ms() * 2654435761u + 0x9e3779b9u;
+    if (!sow_rng) sow_rng = 0x2545f491u;
+    for (int i = 0; i < 8; ++i) {
+        if (planted(i)) continue;
+        g.pad_root[i] = (unsigned char)clampi(pad_base + (int)art_below(&sow_rng, (u32)PADS), 0, 127);
+        g.seed_q[i] = (unsigned char)art_below(&sow_rng, 12u);
+        for (int k = 0; k < 4; ++k) g.seed_ext[i][k] = art_below(&sow_rng, 2u) ? (unsigned char)art_below(&sow_rng, 12u) : (unsigned char)NONE;
+        g.pad_used[i] = 1;
+    }
+}
 static void plant_now(int i) {
     g.seed_q[i] = g.quality;
     int k = 0;
@@ -755,7 +805,8 @@ static void turn_play(int knob, int steps, int shift) {
         else g.boost = (signed char)clampi(g.boost + steps, -2, 2);
     }
 }
-static void turn_rhythm(int knob, int steps) {
+static void turn_rhythm(int knob, int steps, int shift) {
+    if (shift) { if (knob == 0) ending_set(clampi(ending_of() + steps, 0, ENDINGS - 1)); return; }
     if (knob == 0) g.loop = (unsigned char)clampi(g.loop + steps, 0, 1);
     else if (knob == 1) g.length = (unsigned char)clampi(g.length + 5 * steps, 1, 100);
     else if (knob == 2) g.swing = (unsigned char)clampi(g.swing + steps, 50, 75);
@@ -791,7 +842,7 @@ static void turn(int knob, int q10, int shift) {
     if (pg == PAGE_PLAY) { turned_knob = knob; turned_ms = op1f_ms(); }
     u32 m = mask_off();
     if (pg == PAGE_PLAY) turn_play(knob, steps, shift);
-    else if (pg == PAGE_RHYTHM) turn_rhythm(knob, steps);
+    else if (pg == PAGE_RHYTHM) turn_rhythm(knob, steps, shift);
     else if (pg == PAGE_PALETTE) cursor[knob] = clampi(cursor[knob] + steps, 0, 3);
     else turn_gardens(knob, steps, shift);
     mask_on(m);
@@ -806,7 +857,7 @@ static void push(int knob, int shift) {
             else edit = 0;
         } else if (knob == 0) { g.lead ^= 1u; voice = 1; }
         else if (knob == 1) { swap_chords(); voice = 1; }
-        else if (knob == 2) { g.hold ^= 1u; if (!g.hold) hold_req = 1; }
+        else if (knob == 2) { g.hold ^= 1u; hold_req = 1; }
         else { swap_exts(); voice = 1; }
     } else if (pg == PAGE_PALETTE) {
         if (shift) {
@@ -817,7 +868,11 @@ static void push(int knob, int shift) {
         } else palette_rotate(knob, cursor[knob] & 3);
         voice = 1;
     } else if (pg == PAGE_GARDENS) {
-        if (shift) { if (knob == 0) walk_req = g.pad_sel + 1; edit = 0; }
+        if (shift) {
+            if (knob == 0) { walk_req = g.pad_sel + 1; edit = 0; }
+            else if (knob == 2 && page_where == 1u) sow();
+            else edit = 0;
+        }
         else if (knob == 0) plant_now(g.pad_sel);
         else if (knob == 3) g.square = (unsigned char)((g.square + 1) & 3);
         else edit = 0;
@@ -1313,7 +1368,8 @@ static void play_page(u32 ms, int shift) {
     }
     say(TX_ROOT, 240 + sway, 85, name);
 }
-static void rhythm_page() {
+static const char* const ENDING_NAME[ENDINGS] = { "cut", "finish", "root step", "root 1/4", "root 1/2", "root bar" };
+static void rhythm_page(int shift) {
     use(PAGE2);
     beat_dots();
     static const unsigned char UNITS[12] = { 192, 96, 48, 32, 24, 16, 12, 8, 6, 4, 3, 2 };
@@ -1368,8 +1424,8 @@ static void rhythm_page() {
         place(CRITTER_AT + g.extsets[g.pf][i], 122 + 34 * (4 + i), 192, 640);
     }
     Line l;
-    say(TX_T2L0, 10, 36, "loop");
-    say(TX_T2V0, 10, 56, g.loop ? "on" : "off");
+    say(TX_T2L0, 10, 36, shift ? "ending" : "loop");
+    say(TX_T2V0, 10, 56, shift ? ENDING_NAME[ending_of()] : g.loop ? "on" : "off");
     say(TX_T2L1, 10, 146, "length");
     l.clear(); l.num(g.length); l.put("%"); say(TX_T2V1, 10, 166, l.s);
     say(TX_T2L2, 392, 36, "swing");
@@ -1467,7 +1523,8 @@ static void help_words(int pg, int shift, const char** turn, const char** push) 
         if (!shift) { push[0] = "push: voice leading"; push[1] = "push: chord banks"; push[2] = "push: hold"; push[3] = "push: extension banks"; }
         else if (page_where == 1u) push[1] = g.kit ? "push: melodic mode" : "push: drum mode";
     } else if (pg == PAGE_RHYTHM) {
-        turn[0] = "loop"; turn[1] = "length"; turn[2] = "swing"; turn[3] = "human";
+        if (shift) turn[0] = "ending";
+        else { turn[0] = "loop"; turn[1] = "length"; turn[2] = "swing"; turn[3] = "human"; }
     } else if (pg == PAGE_PALETTE) {
         turn[0] = "chord bank a"; turn[1] = "chord bank b"; turn[2] = "extension bank a"; turn[3] = "extension bank b";
         if (shift) { push[0] = push[2] = "push: swap banks"; push[1] = push[3] = "push: reset"; }
@@ -1475,6 +1532,7 @@ static void help_words(int pg, int shift, const char** turn, const char** push) 
     } else if (shift) {
         turn[0] = "walk length"; turn[1] = "walk order";
         push[0] = view.walking ? "push: stop the walk" : "push: walk";
+        if (page_where == 1u) push[2] = "push: sow empty gardens";
     } else {
         turn[0] = "garden"; turn[1] = "root"; turn[2] = "kind"; turn[3] = "extension square";
         push[0] = "push: plant the chord"; push[3] = "push: next square";
@@ -1514,7 +1572,7 @@ static void dress(u32 ms, int shift) {
     }
     if (pg == PAGE_HELP) help_page(shift);
     else if (pg == PAGE_PLAY) play_page(ms, shift);
-    else if (pg == PAGE_RHYTHM) rhythm_page();
+    else if (pg == PAGE_RHYTHM) rhythm_page(shift);
     else if (pg == PAGE_PALETTE) palette_page();
     else gardens_page(ms, shift);
     commit();
