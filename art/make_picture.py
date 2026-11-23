@@ -45,8 +45,8 @@ PETAL = [
     [(0, (0, 0)), (1, (-110, 20, -20, 70, -25, 106)), (1, (95, 95, 80, 35, 0, 0))],
 ]
 SIN = [round(16384 * math.sin(2 * math.pi * i / 256)) for i in range(256)]
-THIN = [("ochre", OCHRE, 1.3, 12), ("orange", ORANGE, 1.3, 24), ("white", WHITE, 2.0, 40), ("dgray", DGRAY, 2.0, 4)] +\
-       [("hue%d" % i, HUE[i], 1.3, 12) for i in range(12)] +\
+THIN = [("ochre", OCHRE, 1.3, 12), ("orange", ORANGE, 1.3, 24), ("white", WHITE, 2.0, 40), ("dgray", DGRAY, 2.0, 4)] + \
+       [("hue%d" % i, HUE[i], 1.3, 12) for i in range(12)] + \
        [("knob%d" % k, KNOB[k], 2.0, 1) for k in range(4)]
 THICK = [("ochre", OCHRE, 3.0, 16), ("orange", ORANGE, 3.0, 16)] + [("hue%d" % i, HUE[i], 3.0, 16) for i in range(12)]
 ICON_COPIES = 8

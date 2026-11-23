@@ -1,7 +1,7 @@
 {
   "about": "Garden: a chord player in the sequencer list.",
   "name": "garden",
-  "version": 2,
+  "version": 3,
   "interface": 1,
   "build": "garden",
   "sources": [
@@ -36,7 +36,7 @@
       {
         "kind": "sequencer",
         "name": "garden",
-        "synth_only": true,
+        "synth_only": false,
         "all_midi": false,
         "shown": "garden_shown",
         "tick": "garden_tick",
