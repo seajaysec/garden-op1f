@@ -151,6 +151,7 @@ static struct {
     int ending;
     u32 end_pos;
     int latch_key;
+    u32 grid_base;
 } st;
 static volatile struct {
     unsigned char note[ART_CHORD_MAX], n, playing, root, kind, boost_note, boosting, planter, walking, stepping, echoing, finishing;
@@ -225,7 +226,8 @@ static void request_of(art_req* r, int velocity) {
     r->order = g.order;
     r->phrase = g.phrase;
     r->mono = (uint8_t)st.mono;
-    r->loop = g.loop || (g.hold && art_stepped(art_style_for(g.style, (u32)st.mono)));
+    u32 sty = art_style_for(g.style, (u32)st.mono);
+    r->loop = g.loop || (g.hold && (art_stepped(sty) || sty == (u32)ART_S_HARP));
     r->gate = g.length;
     r->human = g.human;
     r->pad_ = 0;
@@ -354,6 +356,8 @@ static void strike() {
 }
 static const unsigned char PULSE_DIV[PULSE_RATES] = { 0, 1, 2, 4, 5, 6, 7, 8, 9, 10 };
 static u32 pulse_step() { return g.pulse && g.pulse < PULSE_RATES ? ticks_of(art_div(PULSE_DIV[g.pulse])) : 0u; }
+static u32 grid_align;
+static u32 on_grid(u32 unit) { return grid_align && unit ? st.now - umod(st.now, unit) : st.now; }
 static void begin_gesture(int src) {
     let_go_now();
     st.mono = play_mode_mono();
@@ -365,11 +369,12 @@ static void begin_gesture(int src) {
     st.ending = 0;
     st.latch_key = 0;
     st.pos = 0;
-    st.anchor = st.now;
     st.period = ticks_of(art_period(&r));
+    st.anchor = on_grid(st.period);
+    st.grid_base = grid_align && st.period ? udiv(st.anchor, st.period) : 0u;
     strike();
     u32 ps = pulse_step();
-    st.pulse_next = ps ? st.now + ps : 0;
+    st.pulse_next = ps ? on_grid(ps) + ps : 0;
     st.pulse_note = g.boost ? boost_pitch() : st.root;
 }
 static void release_gesture() {
@@ -425,7 +430,7 @@ static void advance() {
     drain();
     echo_poll();
     if (st.on && st.period) {
-        u32 due = st.anchor + st.pos * st.period + swing_of(st.pos);
+        u32 due = st.anchor + st.pos * st.period + swing_of(st.pos + st.grid_base);
         if ((int)(st.now - due) >= 0) {
             art_req r;
             request_of(&r, 1);
@@ -481,7 +486,7 @@ static int walk_next() {
 static void walk_play(int k) {
     play_planter(k, SRC_PAD);
     st.walk_pad = k;
-    st.walk_at = st.now;
+    st.walk_at = on_grid(TICKS_PER_BAR / 2);
     st.walk_span = walk_span();
 }
 static void walk_toggle(int from) {
@@ -524,7 +529,11 @@ static void revoice() {
     if (!st.on) return;
     st.kind = g.quality;
     st.mask = g.extensions;
+    int finishing = st.ending, latched = st.latched, key = st.latch_key;
     begin_gesture(st.src);
+    st.latched = latched;
+    st.latch_key = key;
+    if (finishing) end_gesture();
 }
 enum { ASK = 0, KEY_ID_MIDI = 1000, KEY_ID_KEYS = 100 };
 static volatile u32 seq_on;
@@ -628,7 +637,7 @@ extern "C" void garden_tick(const Op1fTick* now) {
         end_gesture();
     else if (down && seq_live()) {
         int k = down - 1;
-        if (st.walk) { st.walk_pad = k; st.walk_at = st.now; }
+        if (st.walk) { st.walk_pad = k; st.walk_at = on_grid(TICKS_PER_BAR / 2); }
         if (planted(k)) { play_planter(k, SRC_PAD); ++pads; }
     }
     if (up && st.src == SRC_PAD && !g.hold && !st.walk && st.planter == up - 1 && !st.ending) end_gesture();
@@ -1071,7 +1080,7 @@ static const char* const NOTE_NAME[12] = { "c", "c#", "d", "d#", "e", "f", "f#",
 static const char PAD_NAME[PADS][3] = { "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12",
                                         "13", "14", "15", "16", "17", "18", "19", "20", "21", "22", "23", "24" };
 static const char* pitch_name(int note) { return page_where == 1u ? PAD_NAME[pad_of(note)] : NOTE_NAME[mod12(note)]; }
-static const char* const STYLE_NAME[8] = { "chord", "strum", "strum 2", "slop", "arp", "farp", "pattern", "harp" };
+static const char* const STYLE_NAME[8] = { "chord", "strum", "strummm", "slop", "arp", "farp", "pattern", "harp" };
 static const char RATE_NAME[12][6] = { "2/1", "1/1", "1/2", "1/2t", "1/4", "1/4t", "1/8", "1/8t", "1/16", "1/16t", "1/32", "1/32t" };
 static const char* const ORDER_NAME[6] = { "up", "down", "updown", "downup", "inside", "random" };
 static const char* const VTYPE_NAME[6] = { "close", "drop2", "drop3", "open", "shell", "spread" };
@@ -1184,7 +1193,6 @@ static void status_row(u32 ms, int shift) {
     l[1].put(shift ? RATE_NAME[g.rate] : style_name(style));
     int gray_turned = turned_knob == 2 && ms - turned_ms < 1000u;
     if (!shift && !gray_turned && view.finishing) l[2].put("finishing");
-    else if (!shift && !gray_turned && g.hold) l[2].put(g.loop || art_stepped(art_style_for((u32)style, (u32)st.mono)) ? "latch loop" : "latch ring");
     else if (style == STYLE_PATTERN) l[2].put(shift ? VTYPE_NAME[g.vtype] : art_phrase_names[g.phrase]);
     else if (arp ^ shift) l[2].put(ORDER_NAME[g.order]);
     else l[2].put(VTYPE_NAME[g.vtype]);
