@@ -1,11 +1,8 @@
-const CACHE = 'garden-ced170474943';
-const FILES = ['./', 'index.html', 'style.css', 'app.js', 'synth.js', 'engine.js', 'screen.svg', 'build.json', 'manifest.webmanifest',
-  'vendor/Tone.js', 'icons/icon.svg', 'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png'];
-self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES.map(f => new Request(f, {cache: 'reload'})))).then(() => self.skipWaiting())); });
-self.addEventListener('activate', e => {
-  e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim()));
-});
-self.addEventListener('fetch', e => {
-  if (e.request.method !== 'GET' || new URL(e.request.url).origin !== location.origin) return;
-  e.respondWith(caches.match(e.request, {ignoreSearch: true}).then(hit => hit || fetch(e.request)));
-});
+// The browser version moved to https://seajaysec.github.io/garden-web/: this worker clears what the old one kept,
+// takes itself away and reloads its pages, which then forward there.
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', e => e.waitUntil((async () => {
+  for (const k of await caches.keys()) await caches.delete(k);
+  await self.registration.unregister();
+  for (const c of await self.clients.matchAll({type: 'window'})) c.navigate(c.url);
+})()));
