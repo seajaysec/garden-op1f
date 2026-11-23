@@ -49,7 +49,7 @@ struct Settings {
     unsigned char loop, hold, lead, length, swing, human;
     unsigned char quality, fl, pf, pad_sel, square, walk_len, walk_order, root;
     unsigned short extensions;
-    unsigned char echo, kit;
+    unsigned char echo, melodic;
     unsigned char kinds[2][4], extsets[2][4];
     unsigned char seed_q[8], seed_ext[8][4], pad_root[8], pad_used[8];
     unsigned char ending, spare;
@@ -84,7 +84,7 @@ static int settings_valid(const Settings* s) {
         s->order > 5 || s->phrase >= ART_PHRASES || s->vtype > 5 || s->pulse >= PULSE_RATES || s->loop > 1 || s->hold > 1 ||
         s->lead > 1 || s->length < 1 || s->length > 100 || s->swing < 50 || s->swing > 75 || s->human > 100 ||
         s->quality > 11 || s->fl > 1 || s->pf > 1 || s->pad_sel > 7 || s->square > 3 || s->walk_len >= WALK_LENS ||
-        s->walk_order >= WALK_ORDERS || s->root > 127 || (s->extensions >> 12) || s->echo >= ECHO_RATES || s->kit > 1 || s->ending >= ENDINGS)
+        s->walk_order >= WALK_ORDERS || s->root > 127 || (s->extensions >> 12) || s->echo >= ECHO_RATES || s->melodic > 1 || s->ending >= ENDINGS)
         return 0;
     for (int r = 0; r < 2; ++r)
         for (int i = 0; i < 4; ++i) if (s->kinds[r][i] > 11 || s->extsets[r][i] > 11) return 0;
@@ -164,10 +164,11 @@ static void emit(int note, int vel, int on) {
     ++outbox.n;
 }
 enum { PADS = 24 };
+static int drum_mode() { return !g.melodic; }
 static volatile u32 on_drum;
 static volatile int pad_base = 53;
 static int pad_of(int note) {
-    int p = note - pad_base, span = g.kit ? PADS : 12;
+    int p = note - pad_base, span = drum_mode() ? PADS : 12;
     while (p < 0) p += span;
     while (p >= PADS) p -= span;
     return p;
@@ -853,7 +854,7 @@ static void push(int knob, int shift) {
     u32 m = mask_off();
     if (pg == PAGE_PLAY) {
         if (shift) {
-            if (knob == 1 && page_where == 1u) { g.kit ^= 1u; voice = 1; }
+            if (knob == 1 && page_where == 1u) { g.melodic ^= 1u; voice = 1; }
             else edit = 0;
         } else if (knob == 0) { g.lead ^= 1u; voice = 1; }
         else if (knob == 1) { swap_chords(); voice = 1; }
@@ -1063,7 +1064,7 @@ static const char* const BOOST_NAME[5] = { "boost-2", "boost-1", "boost 0", "boo
 static const char* const WALK_LEN_NAME[WALK_LENS] = { "half bar", "1 bar", "2 bars", "4 bars" };
 static const char* const WALK_ORDER_NAME[WALK_ORDERS] = { "1 to 8", "8 to 1", "bounce", "random" };
 static const char* const KIT_STYLE_NAME[8] = { "hit", "flam", "drag", "loose", "roll", "run", "groove", "sweep" };
-static int kit_names() { return page_where == 1u && g.kit; }
+static int kit_names() { return page_where == 1u && drum_mode(); }
 static const char* style_name(int s) { return kit_names() ? KIT_STYLE_NAME[s & 7] : STYLE_NAME[s & 7]; }
 static const char* kind_name(int q) { return art_kind_names[q]; }
 static const char* pollen_name(int e) { return art_pollen_names[e]; }
@@ -1521,7 +1522,7 @@ static void help_words(int pg, int shift, const char** turn, const char** push) 
         turn[2] = style == STYLE_PATTERN && !shift ? "phrase" : style != STYLE_PATTERN && (arp ^ shift) ? "arp order" : "voicing";
         turn[3] = shift ? "boost pulse" : "boost";
         if (!shift) { push[0] = "push: voice leading"; push[1] = "push: chord banks"; push[2] = "push: hold"; push[3] = "push: extension banks"; }
-        else if (page_where == 1u) push[1] = g.kit ? "push: melodic mode" : "push: drum mode";
+        else if (page_where == 1u) push[1] = drum_mode() ? "push: melodic mode" : "push: drum mode";
     } else if (pg == PAGE_RHYTHM) {
         if (shift) turn[0] = "ending";
         else { turn[0] = "loop"; turn[1] = "length"; turn[2] = "swing"; turn[3] = "human"; }
