@@ -40,13 +40,15 @@ more keys play notes over it.
   walks. On the drum, Shift + gray push sows the empty gardens with something random, Shift + orange push reaps them
   all.
 - **Latch** (gray push on T1) keeps a chord going after you let go: an arp, farp, pattern or harp repeats, a chord or
-  strum rings. Press the same key again, or push gray, to let it go.
+  strum rings. Press the same key again, or push gray, to let it go. While a chord let go plays out its pass, the gray
+  value reads **finishing**.
 - **Ending** (T2, Shift + blue): how a chord let go ends: cut, finish its pass (the first way), or finish and land on
   the root for a step, 1/4, 1/2 or a bar.
 - **Cycle** (T2, Shift + tan): how often a pattern starts over: free, every 1/2 bar, bar or 2 bars. **Downtime** (T2,
   Shift + gray): what a line shorter than its cycle does once played: repeat, rest, or hold its last note.
 - **On the drum** Garden plays the drum's 24 keys. **Drum mode** (the first): a chord's notes hit keys across the
-  kit, octaves land on the other half, and the styles read hit, flam, drag, loose, roll, run, groove, sweep.
+  kit, octaves land on the other half, and the styles read hit, flam, drag, loose, roll, run, groove, sweep. Roots and
+  notes are named by key, 1 to 24.
   **Shift + tan push on T1**: **melodic mode**, Garden as on the synth, for one sound laid a semitone a key.
 - **Help** shows the controls of the page you're on.
 
