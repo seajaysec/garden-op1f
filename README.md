@@ -19,8 +19,12 @@ source is [garden-web](https://github.com/seajaysec/garden-web) (GPL-3.0, for th
 
 ## Install
 
-Put `garden.pack` (in this repository, or from [releases](../../releases)) in the unit's `packs` folder next to open-field's `base.pack`, and
-restart. Hold **Help** while switching on to start without packs.
+Download **[garden.pack](https://github.com/seajaysec/garden-op1f/releases/latest/download/garden.pack)** (the
+latest release; saving the file from this repository's page can save GitHub's web page instead of the pack). Put it in
+the unit's `packs` folder next to open-field's `base.pack` (disk mode), or, where the computer shows no drive of the unit
+(a Mac), into the install folder's `packs` before **put the files on your OP-1** on open-field's install page. Restart.
+Hold **Help** while switching on to start without packs. If the start screen counts a pack left out, the newest file in
+the unit's `logs` folder says which and why: search it for `is left out`.
 
 ## Play
 
